@@ -1,0 +1,19 @@
+[package]
+name = "miku-notes-data"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+tonic = "0.11"
+prost = "0.12"
+prost-types = "0.12"
+tokio-util = { version = "0.7", features = ["io"] }
+tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }
+sqlx = { version = "0.7", features = ["runtime-tokio", "chrono", "postgres", "macros", "migrate"] }
+chrono = { version = "0.4", features = [] }
+dotenvy = "0.15"
+tonic-middleware = "0.1.4"
+
+[build-dependencies]
+tonic-build = "0.11"
