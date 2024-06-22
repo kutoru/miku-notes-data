@@ -28,6 +28,6 @@ pub async fn _reset(pool: &PgPool) -> Result<()> {
 }
 
 pub async fn _test_insert(pool: &PgPool) -> Result<()> {
-    println!("Inserting stuff into the DB");
+    println!("Inserting test data into the DB");
     run_script(pool, "./migrations/test_insert.sql").await
 }

@@ -5,7 +5,6 @@ mod server;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    println!("Start");
 
     let db_url = dotenvy::var("DATABASE_URL")?;
     let addr = dotenvy::var("SERVICE_ADDR")?;
@@ -16,8 +15,6 @@ async fn main() -> anyhow::Result<()> {
 
     println!("Listening on {}", addr);
     server::start(pool, &addr).await?;
-
-    println!("End");
 
     Ok(())
 }
