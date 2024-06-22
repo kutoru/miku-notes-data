@@ -1,16 +1,33 @@
-use sqlx::{postgres::PgRow, Row};
-use tonic::{Response, Status, Code};
+use sqlx::{postgres::{PgRow, PgArguments}, Row, Postgres, prelude::FromRow};
+use tonic::{Response, Status};
+
 use crate::proto::{notes::Note, tags::Tag, files::File};
 
 pub type ServiceResult<T> = Result<Response<T>, Status>;
 
-// convert potential service errors into tonic::Status
-pub trait HandleServiceError<T, E: std::fmt::Debug> {
-    fn map_status(self, code: isize) -> Result<T, Status>;
+#[derive(FromRow)]
+pub struct IDWrapper {
+    pub id: i32,
 }
-impl<T, E: std::fmt::Debug> HandleServiceError<T, E> for Result<T, E> {
-    fn map_status(self, code: isize) -> Result<T, Status> {
-        self.map_err(|e| { Status::new(Code::Unknown, format!("Code: {}; {:#?}", code, e)) })
+
+// convert service errors into tonic::Status
+pub trait HandleServiceError<T> {
+    fn map_to_status(self) -> Result<T, Status>;
+}
+impl<T> HandleServiceError<T> for Result<T, sqlx::Error> {
+    fn map_to_status(self) -> Result<T, Status> {
+        self.map_err(|e| {
+            println!("DB ERR: {:#?}", e);
+            match e {
+                sqlx::Error::Database(e) => match e.kind() {
+                    sqlx::error::ErrorKind::Other => Status::unknown("Unknown"),
+                    _ => Status::invalid_argument("Invalid argument")
+                },
+
+                sqlx::Error::RowNotFound => Status::not_found("Not found"),
+                _ => Status::unknown("Unknown")
+            }
+        })
     }
 }
 
@@ -29,9 +46,27 @@ impl FieldToUnix for PgRow {
     }
 }
 
-#[derive(Debug, Clone, sqlx::FromRow)]
-pub struct IDWrapper {
-    pub id: i32,
+// method on sqlx queries to bind values directly from a vector
+pub trait BindVec<'a> {
+    fn bind_vec<'t, V>(self, vec: &'t Vec<V>) -> Self
+    where
+        V: std::marker::Sync + sqlx::Encode<'t, Postgres> + sqlx::Type<Postgres>,
+        'a: 't,
+        't: 'a,
+    ;
+}
+impl<'a, T> BindVec<'a> for sqlx::query::QueryAs<'a, Postgres, T, PgArguments> {
+    fn bind_vec<'t, V>(mut self, vec: &'t Vec<V>) -> Self
+    where
+        V: std::marker::Sync + sqlx::Encode<'t, Postgres> + sqlx::Type<Postgres>,
+        'a: 't,
+        't: 'a,
+    {
+        for item in vec.iter() {
+            self = self.bind(item);
+        }
+        self
+    }
 }
 
 impl sqlx::FromRow<'_, PgRow> for File {
@@ -44,6 +79,7 @@ impl sqlx::FromRow<'_, PgRow> for File {
             name: row.try_get("name")?,
             size: row.try_get("size")?,
             created: row.try_get_unix("created")?,
+            note_id: row.try_get("note_id").ok(),
         })
     }
 }
@@ -55,6 +91,7 @@ impl sqlx::FromRow<'_, PgRow> for Tag {
             user_id: row.try_get("user_id")?,
             name: row.try_get("name")?,
             created: row.try_get_unix("created")?,
+            note_id: row.try_get("note_id").ok(),
         })
     }
 }

@@ -1,6 +1,6 @@
 mod db;
 mod proto;
-mod models;
+mod types;
 mod server;
 
 #[tokio::main]

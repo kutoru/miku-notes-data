@@ -1,6 +1,6 @@
 use crate::proto::tags::tags_server::{Tags, TagsServer};
 use crate::proto::tags::{CreateTagReq, ReadTagsReq, UpdateTagReq, DeleteTagReq, Tag, TagList, Empty};
-use crate::models::ServiceResult;
+use crate::types::ServiceResult;
 
 use tonic::{Request, Response, Status};
 use sqlx::PgPool;

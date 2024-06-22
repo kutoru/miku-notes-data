@@ -1,6 +1,6 @@
 use crate::proto::files::files_server::{Files, FilesServer};
 use crate::proto::files::{CreateFileReq, DeleteFileReq, File, Empty};
-use crate::models::ServiceResult;
+use crate::types::ServiceResult;
 
 use tonic::{Request, Response, Streaming, Status};
 use sqlx::PgPool;
