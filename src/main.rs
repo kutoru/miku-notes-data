@@ -12,6 +12,10 @@ async fn main() -> anyhow::Result<()> {
     let addr = dotenvy::var("SERVICE_ADDR")?;
     let chunk_size = dotenvy::var("MAX_FILE_CHUNK_SIZE_IN_MB")?.parse()?;
 
+    if !tokio::fs::try_exists("./files").await? {
+        tokio::fs::create_dir("./files").await?;
+    }
+
     let pool = db::get_pool(&db_url).await?;
     db::_reset(&pool).await?;
     db::_test_insert(&pool).await?;
