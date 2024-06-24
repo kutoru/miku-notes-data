@@ -24,7 +24,13 @@ async fn run_script(pool: &PgPool, script_path: &str) -> Result<()> {
 
 pub async fn _reset(pool: &PgPool) -> Result<()> {
     println!("Resetting the DB");
-    run_script(pool, "./migrations/reset.sql").await
+    run_script(pool, "./migrations/reset.sql").await?;
+
+    println!("Clearing the files directory");
+    tokio::fs::remove_dir_all("./files").await?;
+    tokio::fs::create_dir("./files").await?;
+
+    Ok(())
 }
 
 pub async fn _test_insert(pool: &PgPool) -> Result<()> {
