@@ -75,7 +75,6 @@ impl sqlx::FromRow<'_, PgRow> for File {
             id: row.try_get("id")?,
             user_id: row.try_get("user_id")?,
             hash: row.try_get("hash")?,
-            ext: row.try_get("ext")?,
             name: row.try_get("name")?,
             size: row.try_get("size")?,
             created: row.try_get_unix("created")?,
