@@ -1,25 +1,19 @@
 use crate::proto::files::files_server::{Files, FilesServer};
 use crate::proto::files::{CreateFileReq, DeleteFileReq, File, Empty};
-use crate::types::{ServiceResult, HandleServiceError};
+use crate::types::{AppState, HandleServiceError, ServiceResult};
 
 use tokio::io::AsyncWriteExt;
 use tokio_stream::StreamExt;
 use tonic::{Request, Response, Streaming, Status};
-use sqlx::PgPool;
 
-pub fn get_service(pool: PgPool) -> FilesServer<FileServiceState> {
-    let service_state = FileServiceState { pool };
-    FilesServer::new(service_state)
-        .max_decoding_message_size(1024 * 1024 * 11)  // 10mb for files + 1mb extra
-}
-
-#[derive(Debug)]
-pub struct FileServiceState {
-    pool: PgPool,
+pub fn get_service(state: AppState) -> FilesServer<AppState> {
+    let chunk_size = state.chunk_size;
+    FilesServer::new(state)
+        .max_decoding_message_size(1024 * 1024 * (chunk_size + 1))  // 1 extra mb for fields other than data
 }
 
 #[tonic::async_trait]
-impl Files for FileServiceState {
+impl Files for AppState {
     async fn create_file(
         &self,
         request: Request<Streaming<CreateFileReq>>,
@@ -49,7 +43,7 @@ impl Files for FileServiceState {
         let file_path = "./files/".to_owned() + &file_hash;
 
         let mut file = tokio::fs::File::create_new(&file_path).await?;
-        file.set_max_buf_size(1024 * 1024 * 10);
+        file.set_max_buf_size(1024 * 1024 * self.chunk_size);
         let bytes_written = file.write(&first_part.data).await?;
 
         println!("hash, path: {}, {}", file_hash, file_path);

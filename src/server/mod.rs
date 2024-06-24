@@ -1,17 +1,18 @@
 use tonic::{transport::{Server, Body}, codegen::http::Request, async_trait, Status};
 use tonic_middleware::{RequestInterceptorLayer, RequestInterceptor};
-use sqlx::PgPool;
+
+use crate::types::AppState;
 
 mod files;
 mod tags;
 mod notes;
 
-pub async fn start(pool: PgPool, addr: &str) -> anyhow::Result<()> {
+pub async fn start(state: AppState, addr: &str) -> anyhow::Result<()> {
     let interceptor = RequestInterceptorLayer::new(Interceptor {});
 
-    let files_service = files::get_service(pool.clone());
-    let tags_service = tags::get_service(pool.clone());
-    let notes_service = notes::get_service(pool);
+    let files_service = files::get_service(state.clone());
+    let tags_service = tags::get_service(state.clone());
+    let notes_service = notes::get_service(state);
 
     Server::builder()
         .layer(interceptor)

@@ -1,9 +1,15 @@
-use sqlx::{postgres::{PgRow, PgArguments}, Row, Postgres, prelude::FromRow};
+use sqlx::{postgres::{PgArguments, PgRow}, prelude::FromRow, PgPool, Postgres, Row};
 use tonic::{Response, Status};
 
 use crate::proto::{notes::Note, tags::Tag, files::File};
 
 pub type ServiceResult<T> = Result<Response<T>, Status>;
+
+#[derive(Clone)]
+pub struct AppState {
+    pub pool: PgPool,
+    pub chunk_size: usize,
+}
 
 #[derive(FromRow)]
 pub struct IDWrapper {

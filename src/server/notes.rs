@@ -1,19 +1,12 @@
 use crate::proto::notes::notes_server::{Notes, NotesServer};
 use crate::proto::notes::{CreateNoteReq, ReadNotesReq, UpdateNoteReq, DeleteNoteReq, Note, NoteList, Empty};
 use crate::proto::{files::File, tags::Tag};
-use crate::types::{ServiceResult, HandleServiceError, BindVec, IDWrapper};
+use crate::types::{AppState, BindVec, HandleServiceError, IDWrapper, ServiceResult};
 
 use tonic::{Request, Response};
-use sqlx::PgPool;
 
-pub fn get_service(pool: PgPool) -> NotesServer<NoteServiceState> {
-    let service_state = NoteServiceState { pool };
-    NotesServer::new(service_state)
-}
-
-#[derive(Debug)]
-pub struct NoteServiceState {
-    pool: PgPool,
+pub fn get_service(state: AppState) -> NotesServer<AppState> {
+    NotesServer::new(state)
 }
 
 /// Finds the first occurence of "()" inside of the query and pushes Postgres' "$" placeholders into it
@@ -35,7 +28,7 @@ fn fill_tuple_placeholder<V>(query: &str, vec: &Vec<V>, index_offset: usize) -> 
 }
 
 #[tonic::async_trait]
-impl Notes for NoteServiceState {
+impl Notes for AppState {
     async fn create_note(
         &self,
         request: Request<CreateNoteReq>,

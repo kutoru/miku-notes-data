@@ -1,22 +1,15 @@
 use crate::proto::tags::tags_server::{Tags, TagsServer};
 use crate::proto::tags::{CreateTagReq, ReadTagsReq, UpdateTagReq, DeleteTagReq, Tag, TagList, Empty};
-use crate::types::ServiceResult;
+use crate::types::{AppState, ServiceResult};
 
 use tonic::{Request, Response, Status};
-use sqlx::PgPool;
 
-pub fn get_service(pool: PgPool) -> TagsServer<TagServiceState> {
-    let service_state = TagServiceState { pool };
-    TagsServer::new(service_state)
-}
-
-#[derive(Debug)]
-pub struct TagServiceState {
-    pool: PgPool,
+pub fn get_service(state: AppState) -> TagsServer<AppState> {
+    TagsServer::new(state)
 }
 
 #[tonic::async_trait]
-impl Tags for TagServiceState {
+impl Tags for AppState {
     async fn create_tag(
         &self,
         request: Request<CreateTagReq>,
