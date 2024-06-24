@@ -49,6 +49,7 @@ impl Files for FileServiceState {
         let file_path = "./files/".to_owned() + &file_hash;
 
         let mut file = tokio::fs::File::create_new(&file_path).await?;
+        file.set_max_buf_size(1024 * 1024 * 10);
         let bytes_written = file.write(&first_part.data).await?;
 
         println!("hash, path: {}, {}", file_hash, file_path);
