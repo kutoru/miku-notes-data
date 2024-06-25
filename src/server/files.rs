@@ -23,6 +23,8 @@ impl Files for AppState {
 
         let mut stream = request.into_inner();
 
+        // processing the first part
+
         let first_part = stream.next().await
             .ok_or(Status::invalid_argument("First message in the stream is invalid"))??;
 
@@ -32,6 +34,8 @@ impl Files for AppState {
         };
 
         println!("metadata: {}, {}, {}, {}", user_id, note_id, file_name, expected_parts);
+
+        // making sure the note that the file is going to be attached to exists
 
         sqlx::query("SELECT id FROM notes WHERE id = $1 AND user_id = $2;")
             .bind(note_id).bind(user_id)
@@ -49,6 +53,8 @@ impl Files for AppState {
         println!("hash, path: {}, {}", file_hash, file_path);
         println!("part 1: {} ({})", first_part.data.len(), bytes_written);
 
+        // processing the rest of the parts
+
         let mut current_part = 1;
         while let Some(file_part) = stream.next().await {
             current_part += 1;
@@ -65,11 +71,16 @@ impl Files for AppState {
 
         if current_part < expected_parts {
             tokio::fs::remove_file(file_path).await?;
-            return Err(Status::invalid_argument("Amount of parts exceeded the expected amount"));
+            return Err(Status::invalid_argument("Amount of parts is smaller than the expected amount"));
         }
 
+        // saving the file data
+
         let size = file.metadata().await?.len() as i64;
-        let mut transaction = self.pool.begin().await.map_to_status()?;
+        let mut transaction = self.pool
+            .begin()
+            .await
+            .map_to_status()?;
 
         let mut new_file_info = sqlx::query_as::<_, File>("INSERT INTO files (user_id, hash, name, size) VALUES ($1, $2, $3, $4) RETURNING *;")
             .bind(user_id).bind(file_hash).bind(file_name).bind(size).bind(note_id)
@@ -96,6 +107,36 @@ impl Files for AppState {
         &self,
         request: Request<DeleteFileReq>,
     ) -> ServiceResult<Empty> {
-        Err(Status::unimplemented(""))
+
+        let req_body = request.into_inner();
+
+        let mut transaction = self.pool
+            .begin()
+            .await
+            .map_to_status()?;
+
+        sqlx::query("DELETE FROM note_files WHERE file_id = $1;")
+            .bind(req_body.id)
+            .execute(&mut *transaction)
+            .await
+            .map_to_status()?;
+
+        let deleted_file = sqlx::query_as::<_, File>("DELETE FROM files WHERE id = $1 AND user_id = $2 RETURNING *;")
+            .bind(req_body.id).bind(req_body.user_id)
+            .fetch_one(&mut *transaction)
+            .await
+            .map_to_status()?;
+
+        transaction
+            .commit()
+            .await
+            .map_to_status()?;
+
+        let file_path = "./files/".to_owned() + &deleted_file.hash;
+        tokio::fs::remove_file(file_path)
+            .await
+            .unwrap_or_else(|e| println!("Could not delete a file: {:?};\nBecause error: {:?};", deleted_file, e));
+
+        Ok(Response::new(Empty {}))
     }
 }
