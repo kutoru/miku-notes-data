@@ -73,7 +73,8 @@ impl Notes for AppState {
             r#"
                 SELECT t.*, nt.note_id FROM tags AS t
                 INNER JOIN note_tags AS nt
-                ON nt.note_id IN () AND nt.tag_id = t.id;
+                ON nt.note_id IN () AND nt.tag_id = t.id
+                ORDER BY nt.note_id ASC, t.id DESC;
             "#,
             &note_ids, 0,
         ))
@@ -86,7 +87,8 @@ impl Notes for AppState {
             r#"
                 SELECT f.*, nf.note_id FROM files AS f
                 INNER JOIN note_files AS nf
-                ON nf.note_id IN () AND nf.file_id = f.id;
+                ON nf.note_id IN () AND nf.file_id = f.id
+                ORDER BY nf.note_id ASC, f.id DESC;
             "#,
             &note_ids, 0,
         ))
@@ -100,31 +102,31 @@ impl Notes for AppState {
             .await
             .map_to_status()?;
 
-        // assinging tags and files to their respective notes
+        // assinging tags and files to their respective notes.
+        // since all the arrays are sorted by note id,
+        // in theory this implementation iterates through each loop only once
 
-        for note in notes.iter_mut() {
+        for note in notes.iter_mut().rev() {
 
-            let mut j = 0;
-            while j < tags.len() {
-                let note_id = tags[j].note_id
-                    .ok_or(tonic::Status::unknown("Unknown"))?;
+            while tags.len() > 0 {
+                let note_id = tags[tags.len() - 1].note_id
+                    .ok_or(tonic::Status::internal("Could not get a note id from a tag"))?;
 
                 if note_id == note.id {
-                    note.tags.push(tags.remove(j));
+                    note.tags.push(tags.pop().unwrap());
                 } else {
-                    j += 1;
+                    break;
                 }
             }
 
-            j = 0;
-            while j < files.len() {
-                let note_id = files[j].note_id
-                    .ok_or(tonic::Status::unknown("Unknown"))?;
+            while files.len() > 0 {
+                let note_id = files[files.len() - 1].note_id
+                    .ok_or(tonic::Status::internal("Could not get a note id from a file"))?;
 
                 if note_id == note.id {
-                    note.files.push(files.remove(j));
+                    note.files.push(files.pop().unwrap());
                 } else {
-                    j += 1;
+                    break;
                 }
             }
 
