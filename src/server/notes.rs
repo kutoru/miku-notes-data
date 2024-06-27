@@ -167,6 +167,8 @@ impl Notes for AppState {
             .await
             .map_to_status()?;
 
+        // deleting tag and file relations
+
         sqlx::query(r#"
             DELETE FROM note_tags AS nt
             USING notes AS n
@@ -191,6 +193,8 @@ impl Notes for AppState {
             .map(|w| w.id)
             .collect();
 
+        // deleting related files from the db
+
         let files = match file_ids.len() {
             l if l == 0 => vec![],
             _ => sqlx::query_as::<_, File>(&fill_tuple_placeholder(
@@ -207,6 +211,8 @@ impl Notes for AppState {
                 .map_to_status()?,
         };
 
+        // deleting the note itself
+
         sqlx::query("DELETE FROM notes WHERE id = $1 AND user_id = $2;")
             .bind(req_body.id).bind(req_body.user_id)
             .execute(&mut *transaction)
@@ -215,7 +221,7 @@ impl Notes for AppState {
             .rows_affected()
             .ge(&1)
             .then_some(())
-            .ok_or_else(|| sqlx::Error::RowNotFound)
+            .ok_or(sqlx::Error::RowNotFound)
             .map_to_status()?;
 
         transaction
@@ -223,9 +229,13 @@ impl Notes for AppState {
             .await
             .map_to_status()?;
 
-        // after successfull transaction, make sure to delete the files from the disk
+        // deleting related files from the disk
+
         for file in files.iter() {
-            println!("*delete file with name \"{}\"*", file.hash)
+            let file_path = "./files/".to_owned() + &file.hash;
+            tokio::fs::remove_file(file_path)
+                .await
+                .unwrap_or_else(|e| println!("Could not delete a file: {:?};\nBecause error: {:?};", file, e));
         }
 
         Ok(Response::new(Empty {}))
