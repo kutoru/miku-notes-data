@@ -1,3 +1,4 @@
+use futures::FutureExt;
 use types::AppState;
 
 mod db;
@@ -9,7 +10,8 @@ mod server;
 async fn main() -> anyhow::Result<()> {
 
     let db_url = dotenvy::var("DATABASE_URL")?;
-    let addr = dotenvy::var("SERVICE_ADDR")?;
+    let grpc_addr = dotenvy::var("GRPC_SERVICE_ADDR")?;
+    let file_addr = dotenvy::var("FILE_SERVICE_ADDR")?;
     let chunk_size = dotenvy::var("MAX_FILE_CHUNK_SIZE_IN_MB")?.parse()?;
 
     if !tokio::fs::try_exists("./files").await? {
@@ -22,8 +24,10 @@ async fn main() -> anyhow::Result<()> {
 
     let state = AppState { pool, chunk_size };
 
-    println!("Listening on {}", addr);
-    server::start(state, &addr).await?;
+    futures::future::try_join_all([
+        server::start_grpc_server(&state, &grpc_addr).boxed(),
+        server::start_file_server(&state, &file_addr).boxed(),
+    ]).await?;
 
     Ok(())
 }
