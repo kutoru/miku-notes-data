@@ -3,10 +3,12 @@
 This is one out of four parts of [Miku Notes]()
 
 Application parts:
-- [Auth service](https://github.com/kuromii5/sso-auth)
+- [Auth service](https://github.com/kuromii5/miku-notes-auth)
 - [Data service](https://github.com/kutoru/miku-notes-data) (this repo)
 - [Gateway service](https://github.com/kutoru/miku-notes-gateway)
-- [Frontend](https://github.com/kinokorain/Miku-notes-frontend)
+- [Frontend](https://github.com/kinokorain/miku-notes-frontend)
+
+This repo is the service that directly interacts with the user-generated data
 
 # How to run
 
@@ -23,10 +25,12 @@ After that you can do the usual `cargo run` in the root directory
 The .env file should be located in the root directory and have the following contents:
 ```
 DATABASE_URL=postgres://postgres:admin@localhost:5432/databasename?schema=public
-SERVICE_ADDR=127.0.0.1:55055
+GRPC_SERVICE_ADDR=127.0.0.1:5050
+FILE_SERVICE_ADDR=127.0.0.1:6060
 MAX_FILE_CHUNK_SIZE_IN_MB=10
 ```
 Where:
 - `DATABASE_URL` is the usual Postgres url
-- `SERVICE_ADDR` is the address that this service will run on
-- `MAX_FILE_CHUNK_SIZE_IN_MB` is an unsigned int that will become the maximum allowed size for recieved file chunks in gRPC messages in Megabytes (10 is fine)
+- `GRPC_SERVICE_ADDR` is the address that the gRPC routes of this service will run on
+- `FILE_SERVICE_ADDR` is the address that the file managing routes (such as upload and download) of this service will run on
+- `MAX_FILE_CHUNK_SIZE_IN_MB` is an unsigned int that will become the maximum allowed size for received file chunks in gRPC messages in megabytes (10 is fine)
