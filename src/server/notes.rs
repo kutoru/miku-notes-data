@@ -67,6 +67,10 @@ impl Notes for AppState {
 
         let note_ids: Vec<_> = notes.iter().map(|n| n.id).collect();
 
+        if note_ids.len() == 0 {
+            return Ok(Response::new(NoteList { notes: vec![] }));
+        }
+
         // fetching relevant tags and files
 
         let mut tags = sqlx::query_as::<_, Tag>(&fill_tuple_placeholder(
