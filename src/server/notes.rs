@@ -146,7 +146,12 @@ impl Notes for AppState {
 
         let req_body = request.into_inner();
 
-        let updated_note = sqlx::query_as::<_, Note>("UPDATE notes SET title = $1, text = $2, last_edited = NOW() WHERE id = $3 AND user_id = $4 RETURNING *;")
+        let updated_note = sqlx::query_as::<_, Note>(r#"
+            UPDATE notes
+            SET title = $1, text = $2, last_edited = NOW(), times_edited = times_edited + 1
+            WHERE id = $3 AND user_id = $4
+            RETURNING *;
+        "#)
             .bind(req_body.title).bind(req_body.text).bind(req_body.id).bind(req_body.user_id)
             .fetch_one(&self.pool)
             .await
