@@ -1,7 +1,7 @@
 use crate::proto::notes::notes_server::{Notes, NotesServer};
 use crate::proto::notes::{CreateNoteReq, ReadNotesReq, UpdateNoteReq, DeleteNoteReq, Note, NoteList, Empty};
 use crate::proto::{files::File, tags::Tag};
-use crate::types::{AppState, BindVec, HandleServiceError, IDWrapper, ServiceResult};
+use crate::types::{AppState, BindSlice, HandleServiceError, IDWrapper, ServiceResult};
 
 use tonic::{Request, Response};
 
@@ -82,7 +82,7 @@ impl Notes for AppState {
             "#,
             &note_ids, 0,
         ))
-            .bind_vec(&note_ids)
+            .bind_slice(&note_ids)
             .fetch_all(&mut *transaction)
             .await
             .map_to_status()?;
@@ -96,7 +96,7 @@ impl Notes for AppState {
             "#,
             &note_ids, 0,
         ))
-            .bind_vec(&note_ids)
+            .bind_slice(&note_ids)
             .fetch_all(&mut *transaction)
             .await
             .map_to_status()?;
@@ -210,7 +210,7 @@ impl Notes for AppState {
                 "#,
                 &file_ids, 1,
             ))
-                .bind(req_body.user_id).bind_vec(&file_ids)
+                .bind(req_body.user_id).bind_slice(&file_ids)
                 .fetch_all(&mut *transaction)
                 .await
                 .map_to_status()?,

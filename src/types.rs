@@ -52,23 +52,19 @@ impl FieldToUnix for PgRow {
     }
 }
 
-// method on sqlx queries to bind values directly from a vector
-pub trait BindVec<'a> {
-    fn bind_vec<'t, V>(self, vec: &'t Vec<V>) -> Self
+// method on sqlx queries to bind values directly from a slice
+pub trait BindSlice<'a> {
+    fn bind_slice<V>(self, _: &'a [V]) -> Self
     where
-        V: std::marker::Sync + sqlx::Encode<'t, Postgres> + sqlx::Type<Postgres>,
-        'a: 't,
-        't: 'a,
+        V: Sync + sqlx::Encode<'a, Postgres> + sqlx::Type<Postgres>,
     ;
 }
-impl<'a, T> BindVec<'a> for sqlx::query::QueryAs<'a, Postgres, T, PgArguments> {
-    fn bind_vec<'t, V>(mut self, vec: &'t Vec<V>) -> Self
+impl<'a, T> BindSlice<'a> for sqlx::query::QueryAs<'a, Postgres, T, PgArguments> {
+    fn bind_slice<V>(mut self, slice: &'a [V]) -> Self
     where
-        V: std::marker::Sync + sqlx::Encode<'t, Postgres> + sqlx::Type<Postgres>,
-        'a: 't,
-        't: 'a,
+        V: Sync + sqlx::Encode<'a, Postgres> + sqlx::Type<Postgres>,
     {
-        for item in vec.iter() {
+        for item in slice {
             self = self.bind(item);
         }
         self
