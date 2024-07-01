@@ -1,5 +1,6 @@
 use sqlx::{postgres::{PgArguments, PgRow}, prelude::FromRow, PgPool, Postgres, Row};
-use tonic::{Response, Status};
+use tonic::{async_trait, transport::Body, Response, Status};
+use tonic_middleware::RequestInterceptor;
 
 use crate::proto::{notes::Note, tags::Tag, files::File};
 
@@ -14,6 +15,28 @@ pub struct AppState {
 #[derive(FromRow)]
 pub struct IDWrapper {
     pub id: i32,
+}
+
+#[derive(Clone)]
+pub struct Interceptor {
+    pub auth_value: String,
+}
+
+#[async_trait]
+impl RequestInterceptor for Interceptor {
+    async fn intercept(
+        &self,
+        req: tonic::codegen::http::Request<Body>
+    ) -> Result<tonic::codegen::http::Request<Body>, Status> {
+        println!("Request: {} -> {}", req.method(), req.uri().path());
+
+        match req.headers().get("authorization").map(|v| v.to_str()) {
+            Some(Ok(h)) if h == self.auth_value => (),
+            _ => return Err(Status::unauthenticated("invalid authorization token")),
+        }
+
+        Ok(req)
+    }
 }
 
 // convert service errors into tonic::Status

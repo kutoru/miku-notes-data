@@ -1,7 +1,7 @@
-use tonic::{transport::{Server, Body}, codegen::http::Request, async_trait, Status};
-use tonic_middleware::{RequestInterceptorLayer, RequestInterceptor};
+use tonic::transport::Server;
+use tonic_middleware::RequestInterceptorLayer;
 
-use crate::types::AppState;
+use crate::types::{AppState, Interceptor};
 
 mod files;
 mod tags;
@@ -27,26 +27,4 @@ pub async fn start(state: &AppState, addr: &str, service_token: &str) -> anyhow:
         .await?;
 
     Ok(())
-}
-
-#[derive(Clone)]
-pub struct Interceptor {
-    pub auth_value: String,
-}
-
-#[async_trait]
-impl RequestInterceptor for Interceptor {
-    async fn intercept(
-        &self,
-        req: Request<Body>
-    ) -> Result<Request<Body>, Status> {
-        println!("Request: {} -> {}", req.method(), req.uri().path());
-
-        match req.headers().get("authorization").map(|v| v.to_str()) {
-            Some(Ok(h)) if h == self.auth_value => (),
-            _ => return Err(Status::unauthenticated("invalid authorization token")),
-        }
-
-        Ok(req)
-    }
 }
