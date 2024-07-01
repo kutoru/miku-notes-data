@@ -1,5 +1,5 @@
 use crate::proto::notes::notes_server::{Notes, NotesServer};
-use crate::proto::notes::{CreateNoteReq, ReadNotesReq, UpdateNoteReq, DeleteNoteReq, Note, NoteList, Empty};
+use crate::proto::notes::{AttachTagReq, CreateNoteReq, DeleteNoteReq, DetachTagReq, Empty, Note, NoteList, ReadNotesReq, UpdateNoteReq};
 use crate::proto::{files::File, tags::Tag};
 use crate::types::{AppState, BindSlice, HandleServiceError, IDWrapper, ServiceResult};
 
@@ -223,7 +223,7 @@ impl Notes for AppState {
             .await
             .map_to_status()?
             .rows_affected()
-            .ge(&1)
+            .eq(&1)
             .then_some(())
             .ok_or(sqlx::Error::RowNotFound)
             .map_to_status()?;
@@ -244,4 +244,69 @@ impl Notes for AppState {
 
         Ok(Response::new(Empty {}))
     }
+
+    async fn attach_tag(
+        &self,
+        request: Request<AttachTagReq>,
+    ) -> ServiceResult<Empty> {
+
+        let req_body = request.into_inner();
+
+        // trying to insert a new note-tag relation while making sure
+        // that both the note and the tag belong to the user
+
+        sqlx::query(r"
+            INSERT INTO note_tags (note_id, tag_id)
+            SELECT (
+                SELECT id FROM notes WHERE id = $1 AND user_id = $3
+            ), (
+                SELECT id FROM tags WHERE id = $2 AND user_id = $3
+            );
+        ")
+            .bind(req_body.note_id).bind(req_body.tag_id).bind(req_body.user_id)
+            .execute(&self.pool)
+            .await
+            .map_to_status()?;
+
+        Ok(Response::new(Empty {}))
+    }
+
+    async fn detach_tag(
+        &self,
+        request: Request<DetachTagReq>,
+    ) -> ServiceResult<Empty> {
+
+        let req_body = request.into_inner();
+
+        let mut transaction = self.pool
+            .begin()
+            .await
+            .map_to_status()?;
+
+        sqlx::query(r"
+            DELETE FROM note_tags
+            WHERE note_id = (
+                SELECT id FROM notes WHERE id = $1 AND user_id = $3
+            ) AND tag_id = (
+                SELECT id FROM tags WHERE id = $2 AND user_id = $3
+            );
+        ")
+            .bind(req_body.note_id).bind(req_body.tag_id).bind(req_body.user_id)
+            .execute(&mut *transaction)
+            .await
+            .map_to_status()?
+            .rows_affected()
+            .eq(&1)
+            .then_some(())
+            .ok_or(sqlx::Error::RowNotFound)
+            .map_to_status()?;
+
+        transaction
+            .commit()
+            .await
+            .map_to_status()?;
+
+        Ok(Response::new(Empty {}))
+    }
+
 }
