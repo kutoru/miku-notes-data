@@ -7,8 +7,10 @@ mod files;
 mod tags;
 mod notes;
 
-pub async fn start(state: &AppState, addr: &str) -> anyhow::Result<()> {
-    let interceptor = RequestInterceptorLayer::new(Interceptor {});
+pub async fn start(state: &AppState, addr: &str, service_token: &str) -> anyhow::Result<()> {
+    let interceptor = RequestInterceptorLayer::new(Interceptor {
+        auth_value: format!("Bearer {}", service_token),
+    });
 
     let files_service = files::get_service(state.clone());
     let tags_service = tags::get_service(state.clone());
@@ -28,11 +30,9 @@ pub async fn start(state: &AppState, addr: &str) -> anyhow::Result<()> {
 }
 
 #[derive(Clone)]
-pub struct Interceptor {}
-
-// auth validation examples
-// https://crates.io/crates/tonic-middleware
-// https://github.com/teimuraz/tonic-middleware/blob/main/example/src/server.rs
+pub struct Interceptor {
+    pub auth_value: String,
+}
 
 #[async_trait]
 impl RequestInterceptor for Interceptor {
@@ -41,6 +41,12 @@ impl RequestInterceptor for Interceptor {
         req: Request<Body>
     ) -> Result<Request<Body>, Status> {
         println!("Request: {} -> {}", req.method(), req.uri().path());
+
+        match req.headers().get("authorization").map(|v| v.to_str()) {
+            Some(Ok(h)) if h == self.auth_value => (),
+            _ => return Err(Status::unauthenticated("invalid authorization token")),
+        }
+
         Ok(req)
     }
 }

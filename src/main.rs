@@ -9,7 +9,8 @@ mod server;
 async fn main() -> anyhow::Result<()> {
 
     let db_url = dotenvy::var("DATABASE_URL")?;
-    let grpc_addr = dotenvy::var("SERVICE_ADDR")?;
+    let service_addr = dotenvy::var("SERVICE_ADDR")?;
+    let service_token = dotenvy::var("SERVICE_TOKEN")?;
     let chunk_size = dotenvy::var("MAX_FILE_CHUNK_SIZE")?.parse()?;
 
     if !tokio::fs::try_exists("./files").await? {
@@ -22,7 +23,7 @@ async fn main() -> anyhow::Result<()> {
 
     let state = AppState { pool, chunk_size };
 
-    server::start(&state, &grpc_addr).await?;
+    server::start(&state, &service_addr, &service_token).await?;
 
     Ok(())
 }
