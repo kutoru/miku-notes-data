@@ -8,7 +8,6 @@ anyhow = "1"
 tonic = "0.11"
 prost = "0.12"
 prost-types = "0.12"
-tokio-util = { version = "0.7", features = ["io"] }
 tokio = { version = "1.0", features = ["macros", "rt-multi-thread", "fs"] }
 sqlx = { version = "0.7", features = ["runtime-tokio", "chrono", "postgres", "macros", "migrate"] }
 chrono = { version = "0.4", features = [] }
@@ -16,9 +15,6 @@ dotenvy = "0.15"
 tonic-middleware = "0.1.4"
 tokio-stream = "0.1.15"
 uuid = { version = "1.8.0", features = ["v4", "fast-rng"] }
-axum = { version = "0.7", features = [] }
-futures = "0.3.30"
-mime_guess = "2.0.4"
 
 [build-dependencies]
 tonic-build = "0.11"

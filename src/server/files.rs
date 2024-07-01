@@ -1,8 +1,10 @@
 use crate::proto::files::files_server::{Files, FilesServer};
-use crate::proto::files::{CreateFileReq, DeleteFileReq, File, Empty};
+use crate::proto::files::{CreateFileReq, DeleteFileReq, DownloadFileMetadata, DownloadFileReq, Empty, File, FileData};
 use crate::types::{AppState, HandleServiceError, ServiceResult};
 
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncWriteExt, AsyncReadExt};
+use tokio::sync::mpsc;
+use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
 use tonic::{Request, Response, Streaming, Status};
 
@@ -101,6 +103,94 @@ impl Files for AppState {
 
         new_file_info.note_id = Some(note_id);
         Ok(Response::new(new_file_info))
+    }
+
+    type DownloadFileStream = ReceiverStream<Result<FileData, Status>>;
+
+    async fn download_file(
+        &self,
+        request: Request<DownloadFileReq>,
+    ) -> ServiceResult<Self::DownloadFileStream> {
+
+        let req_body = dbg!(request.into_inner());
+
+        // checking the file in the db
+
+        let file_info = sqlx::query_as::<_, File>("SELECT * FROM files WHERE hash = $1 AND user_id = $2;")
+            .bind(&req_body.file_hash).bind(req_body.user_id)
+            .fetch_one(&self.pool)
+            .await
+            .map_to_status()?;
+
+        // preparing the file and size info
+
+        let mut file = tokio::fs::File::open(format!("./files/{}", file_info.hash)).await
+            .map_err(|_| tonic::Status::internal("could not find the file"))?;
+
+        let file_size = file.metadata().await.unwrap().len();
+        // let chunk_size = (1024 * 1024 * self.chunk_size) as u64;
+        let chunk_size = 1024 * 1024 * 3 + 1024 * 512;  // unforunately, anything around and above 4mb doesn't get accepted by browsers or something
+        let expected_parts = (file_size / chunk_size) as i32 + (file_size % chunk_size > 0) as i32;
+        let last_part_len = (file_size % chunk_size) as usize;
+
+        file.set_max_buf_size(chunk_size as usize);
+        let mut buffer = vec![0; chunk_size as usize];
+
+        println!("size, chunk, parts: {}, {}, {}", file_size, chunk_size, expected_parts);
+
+        // defining a channel that yields FileData objects with file data
+
+        let (sender, receiver) = mpsc::channel(4);
+
+        tokio::spawn(async move {
+            println!("stream start");
+
+            // send the metadata without any file data first
+
+            let metadata_part = FileData {
+                data: Default::default(),
+                metadata: Some(DownloadFileMetadata {
+                    name: file_info.name,
+                    size: file_size as i64,
+                    expected_parts: expected_parts,
+                }),
+            };
+
+            match sender.send(Ok(metadata_part)).await {
+                Ok(_) => (),
+                Err(e) => println!("SENDER SEND ERR: {}", e),
+            };
+
+            // and then send the actual file data by reading the file
+
+            for i in 1..=expected_parts {
+                match file.read(&mut buffer).await {
+                    Ok(len) => if len == 0 { println!("FILE READ LEN == 0"); break; },
+                    Err(e) => { println!("FILE READ ERR: {:#?}", e); break; },
+                }
+
+                let data = match i == expected_parts {
+                    true => buffer[0..last_part_len].to_vec(),
+                    false => buffer.clone(),
+                };
+
+                if i < 10 || (i < 100 && i % 10 == 0) || i % 100 == 0 || i == expected_parts {
+                    println!("buf {}: {}", i, data.len());
+                }
+
+                let data_part = FileData {
+                    data: data,
+                    metadata: None,
+                };
+
+                match sender.send(Ok(data_part)).await {
+                    Ok(_) => (),
+                    Err(e) => { println!("SENDER SEND ERR: {}", e); break; },
+                };
+            }
+        });
+
+        Ok(Response::new(ReceiverStream::new(receiver)))
     }
 
     async fn delete_file(

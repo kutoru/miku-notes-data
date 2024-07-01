@@ -6,16 +6,15 @@ use crate::types::AppState;
 mod files;
 mod tags;
 mod notes;
-mod file_server;
 
-pub async fn start_grpc_server(state: &AppState, addr: &str) -> anyhow::Result<()> {
+pub async fn start(state: &AppState, addr: &str) -> anyhow::Result<()> {
     let interceptor = RequestInterceptorLayer::new(Interceptor {});
 
     let files_service = files::get_service(state.clone());
     let tags_service = tags::get_service(state.clone());
     let notes_service = notes::get_service(state.clone());
 
-    println!("GRPC server listening on {}", addr);
+    println!("Data server listening on {}", addr);
 
     Server::builder()
         .layer(interceptor)
@@ -25,16 +24,6 @@ pub async fn start_grpc_server(state: &AppState, addr: &str) -> anyhow::Result<(
         .serve(addr.parse()?)
         .await?;
 
-    Ok(())
-}
-
-pub async fn start_file_server(state: &AppState, addr: &str) -> anyhow::Result<()> {
-    let listener = tokio::net::TcpListener::bind(addr).await?;
-    let app = file_server::get_router(state);
-
-    println!("File server listening on {}", addr);
-
-    axum::serve(listener, app).await?;
     Ok(())
 }
 
