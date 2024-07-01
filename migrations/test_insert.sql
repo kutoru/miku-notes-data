@@ -1,7 +1,8 @@
-INSERT INTO users (email, password) VALUES
-('asdfjk', '34'),
-('kuromix', '35'),
-('nexochan', '32');
+-- INSERT INTO users (email, pass_hash) VALUES
+-- ('asdfjk@gmail.com', '$2a$12$pDD1LIsbG./RQaNZjkrKWOOdDM4EzArm0Fu92j4wfB1UcXZM/x7ru'),
+-- ('kuromix@mail.ru', '$2a$12$VRv4DVkfPeYYlMM5HQAMQua1uHFjgw3JYiEGSG8gFttwqTarPaZiC'),
+-- ('nexochan@mail.ru', '$2a$10$8rYX3btoXa02PxerJnv/LeK3/gyRNJfq3vQVNCuMkzlblILluTf.u');
+-- the passes are 1234
 
 INSERT INTO notes (user_id, title, text) VALUES
 (1, 'slkdfjasldjf', 'as ldfjaw o3efj3w ijfas'),
