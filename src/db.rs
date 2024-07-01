@@ -10,7 +10,7 @@ pub async fn get_pool(db_url: &str) -> Result<PgPool> {
         .map_err(|e| anyhow!(e))
 }
 
-async fn run_script(pool: &PgPool, script_path: &str) -> Result<()> {
+async fn _run_script(pool: &PgPool, script_path: &str) -> Result<()> {
     let file = fs::read_to_string(script_path).await?;
     let mut transaction = pool.begin().await?;
 
@@ -24,7 +24,7 @@ async fn run_script(pool: &PgPool, script_path: &str) -> Result<()> {
 
 pub async fn _reset(pool: &PgPool) -> Result<()> {
     println!("Resetting the DB");
-    run_script(pool, "./migrations/reset.sql").await?;
+    _run_script(pool, "./migrations/reset.sql").await?;
 
     println!("Clearing the files directory");
     tokio::fs::remove_dir_all("./files").await?;
@@ -35,5 +35,5 @@ pub async fn _reset(pool: &PgPool) -> Result<()> {
 
 pub async fn _test_insert(pool: &PgPool) -> Result<()> {
     println!("Inserting test data into the DB");
-    run_script(pool, "./migrations/test_insert.sql").await
+    _run_script(pool, "./migrations/test_insert.sql").await
 }
