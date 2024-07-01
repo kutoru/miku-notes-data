@@ -148,7 +148,7 @@ impl Files for AppState {
             // send the metadata without any file data first
 
             let metadata_part = FileData {
-                data: Default::default(),
+                data: Vec::default(),
                 metadata: Some(DownloadFileMetadata {
                     name: file_info.name,
                     size: file_size as i64,

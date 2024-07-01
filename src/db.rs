@@ -14,7 +14,7 @@ async fn run_script(pool: &PgPool, script_path: &str) -> Result<()> {
     let file = fs::read_to_string(script_path).await?;
     let mut transaction = pool.begin().await?;
 
-    for query in file.split(";") {
+    for query in file.split(';') {
         sqlx::query(query).execute(&mut *transaction).await?;
     }
 

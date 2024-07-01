@@ -11,9 +11,8 @@ pub fn get_service(state: AppState) -> NotesServer<AppState> {
 
 /// Finds the first occurence of "()" inside of the query and pushes Postgres' "$" placeholders into it
 fn fill_tuple_placeholder<V>(query: &str, vec: &Vec<V>, index_offset: usize) -> String {
-    let paren_idx = match query.find("()") {
-        Some(index) => index,
-        None => return query.to_owned(),
+    let Some(paren_idx) = query.find("()") else {
+        return query.to_owned();
     };
 
     let placeholders_str = (1..=vec.len())
@@ -67,19 +66,19 @@ impl Notes for AppState {
 
         let note_ids: Vec<_> = notes.iter().map(|n| n.id).collect();
 
-        if note_ids.len() == 0 {
+        if note_ids.is_empty() {
             return Ok(Response::new(NoteList { notes: vec![] }));
         }
 
         // fetching relevant tags and files
 
         let mut tags = sqlx::query_as::<_, Tag>(&fill_tuple_placeholder(
-            r#"
+            r"
                 SELECT t.*, nt.note_id FROM tags AS t
                 INNER JOIN note_tags AS nt
                 ON nt.note_id IN () AND nt.tag_id = t.id
                 ORDER BY nt.note_id ASC, t.id DESC;
-            "#,
+            ",
             &note_ids, 0,
         ))
             .bind_slice(&note_ids)
@@ -88,12 +87,12 @@ impl Notes for AppState {
             .map_to_status()?;
 
         let mut files = sqlx::query_as::<_, File>(&fill_tuple_placeholder(
-            r#"
+            r"
                 SELECT f.*, nf.note_id FROM files AS f
                 INNER JOIN note_files AS nf
                 ON nf.note_id IN () AND nf.file_id = f.id
                 ORDER BY nf.note_id ASC, f.id DESC;
-            "#,
+            ",
             &note_ids, 0,
         ))
             .bind_slice(&note_ids)
@@ -112,7 +111,7 @@ impl Notes for AppState {
 
         for note in notes.iter_mut().rev() {
 
-            while tags.len() > 0 {
+            while !tags.is_empty() {
                 let note_id = tags[tags.len() - 1].note_id
                     .ok_or(tonic::Status::internal("Could not get a note id from a tag"))?;
 
@@ -123,7 +122,7 @@ impl Notes for AppState {
                 }
             }
 
-            while files.len() > 0 {
+            while !files.is_empty() {
                 let note_id = files[files.len() - 1].note_id
                     .ok_or(tonic::Status::internal("Could not get a note id from a file"))?;
 
@@ -146,12 +145,12 @@ impl Notes for AppState {
 
         let req_body = request.into_inner();
 
-        let updated_note = sqlx::query_as::<_, Note>(r#"
+        let updated_note = sqlx::query_as::<_, Note>(r"
             UPDATE notes
             SET title = $1, text = $2, last_edited = NOW(), times_edited = times_edited + 1
             WHERE id = $3 AND user_id = $4
             RETURNING *;
-        "#)
+        ")
             .bind(req_body.title).bind(req_body.text).bind(req_body.id).bind(req_body.user_id)
             .fetch_one(&self.pool)
             .await
@@ -174,22 +173,22 @@ impl Notes for AppState {
 
         // deleting tag and file relations
 
-        sqlx::query(r#"
+        sqlx::query(r"
             DELETE FROM note_tags AS nt
             USING notes AS n
             WHERE n.id = nt.note_id AND n.id = $1 AND n.user_id = $2;
-        "#)
+        ")
             .bind(req_body.id).bind(req_body.user_id)
             .execute(&mut *transaction)
             .await
             .map_to_status()?;
 
-        let file_ids: Vec<_> = sqlx::query_as::<_, IDWrapper>(r#"
+        let file_ids: Vec<_> = sqlx::query_as::<_, IDWrapper>(r"
             DELETE FROM note_files AS nf
             USING notes AS n
             WHERE n.id = nf.note_id AND n.id = $1 AND n.user_id = $2
             RETURNING nf.file_id AS id;
-        "#)
+        ")
             .bind(req_body.id).bind(req_body.user_id)
             .fetch_all(&mut *transaction)
             .await
@@ -201,13 +200,13 @@ impl Notes for AppState {
         // deleting related files from the db
 
         let files = match file_ids.len() {
-            l if l == 0 => vec![],
+            0 => vec![],
             _ => sqlx::query_as::<_, File>(&fill_tuple_placeholder(
-                r#"
-                DELETE FROM files
-                WHERE user_id = $1 AND id IN ()
-                RETURNING *;
-                "#,
+                r"
+                    DELETE FROM files
+                    WHERE user_id = $1 AND id IN ()
+                    RETURNING *;
+                ",
                 &file_ids, 1,
             ))
                 .bind(req_body.user_id).bind_slice(&file_ids)
@@ -236,7 +235,7 @@ impl Notes for AppState {
 
         // deleting related files from the disk
 
-        for file in files.iter() {
+        for file in &files {
             let file_path = "./files/".to_owned() + &file.hash;
             tokio::fs::remove_file(file_path)
                 .await
