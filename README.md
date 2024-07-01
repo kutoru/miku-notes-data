@@ -25,12 +25,12 @@ After that you can do the usual `cargo run` in the root directory
 The .env file should be located in the root directory and have the following contents:
 ```
 DATABASE_URL=postgres://postgres:admin@localhost:5432/databasename?schema=public
-GRPC_SERVICE_ADDR=127.0.0.1:5050
-FILE_SERVICE_ADDR=127.0.0.1:6060
-MAX_FILE_CHUNK_SIZE_IN_MB=10
+SERVICE_ADDR=127.0.0.1:5050
+SERVICE_TOKEN=3san9kyu
+MAX_FILE_CHUNK_SIZE=8
 ```
 Where:
 - `DATABASE_URL` is the usual Postgres url
-- `GRPC_SERVICE_ADDR` is the address that the gRPC routes of this service will run on
-- `FILE_SERVICE_ADDR` is the address that the file managing routes (such as upload and download) of this service will run on
-- `MAX_FILE_CHUNK_SIZE_IN_MB` is an unsigned int that will become the maximum allowed size for received file chunks in gRPC messages in megabytes (10 is fine)
+- `SERVICE_ADDR` is the address that the gRPC routes of this service will run on
+- `SERVICE_TOKEN` is a random string that would become the required Authorization token for all incoming requests
+- `MAX_FILE_CHUNK_SIZE` is an unsigned int that will become the maximum allowed size for received file chunks in gRPC messages in megabytes
