@@ -1,7 +1,8 @@
 use crate::proto::notes::notes_server::{Notes, NotesServer};
+use crate::proto::notes::sort::SortType;
 use crate::proto::notes::{AttachTagReq, CreateNoteReq, DeleteNoteReq, DetachTagReq, Empty, Note, NoteList, ReadNotesReq, UpdateNoteReq};
 use crate::proto::{files::File, tags::Tag};
-use crate::types::{AppState, BindSlice, HandleServiceError, IDWrapper, ServiceResult};
+use crate::types::{AppState, BindIter, HandleServiceError, IDWrapper, ServiceResult};
 
 use tonic::{Request, Response};
 
@@ -10,12 +11,12 @@ pub fn get_service(state: AppState) -> NotesServer<AppState> {
 }
 
 /// Finds the first occurence of "()" inside of the query and pushes Postgres' "$" placeholders into it
-fn fill_tuple_placeholder<V>(query: &str, vec: &Vec<V>, index_offset: usize) -> String {
+fn fill_tuple_placeholder<V>(query: &str, arr: &[V], index_offset: usize) -> String {
     let Some(paren_idx) = query.find("()") else {
         return query.to_owned();
     };
 
-    let placeholders_str = (1..=vec.len())
+    let placeholders_str = (1..=arr.len())
         .map(|i| format!("${}", i + index_offset))
         .collect::<Vec<String>>()
         .join(",");
@@ -51,15 +52,84 @@ impl Notes for AppState {
 
         let req_body = request.into_inner();
 
-        // fetching notes
+        println!("READ NOTES BODY: {:#?}", req_body);
+
+        // getting sort params
+
+        let sort = req_body.sort.unwrap();
+        let sort_asc = sort.asc;
+        let sort_type = SortType::try_from(sort.sort_type).unwrap();
+
+        // getting filter params and building the query
+
+        let filters = req_body.filters.unwrap();
+
+        let mut query_str: String = "SELECT * FROM notes WHERE user_id = $1".into();
+        let mut param_num = 1;
+
+        if let Some(filter_tags) = &filters.filter_tags {
+            if !filter_tags.tag_ids.is_empty() {
+                query_str += "\nAND id IN (SELECT note_id FROM note_tags WHERE tag_id IN ())";
+                query_str = fill_tuple_placeholder(&query_str, &filter_tags.tag_ids, param_num);
+                param_num += filter_tags.tag_ids.len();
+            } else {
+                query_str += "\nAND id NOT IN (SELECT note_id FROM note_tags)";
+            }
+        }
+
+        if filters.filter_date.is_some() {
+            query_str += &format!(
+                "\nAND EXTRACT(EPOCH FROM created) BETWEEN ${} AND ${}",
+                param_num + 1, param_num + 2,
+            );
+            param_num += 2;
+        }
+
+        if filters.filter_date_modif.is_some() {
+            query_str += &format!(
+                "\nAND EXTRACT(EPOCH FROM last_edited) BETWEEN ${} AND ${}",
+                param_num + 1, param_num + 2,
+            );
+            param_num += 2;
+        }
+
+        if filters.filter_search.is_some() {
+            query_str += &format!("\nAND title ILIKE ${}", param_num + 1);
+        }
+
+        query_str += "\nORDER BY id DESC;";
+
+        query_str = dbg!(query_str);
+
+        // binding values and fetching notes
 
         let mut transaction = self.pool
             .begin()
             .await
             .map_to_status()?;
 
-        let mut notes = sqlx::query_as::<_, Note>("SELECT * FROM notes WHERE user_id = $1 ORDER BY id;")
-            .bind(req_body.user_id)
+        let mut query = sqlx::query_as::<_, Note>(&query_str)
+            .bind(req_body.user_id);
+
+        if let Some(filter_tags) = filters.filter_tags {
+            if !filter_tags.tag_ids.is_empty() {
+                query = query.bind_iter(filter_tags.tag_ids);
+            }
+        }
+
+        if let Some(filter_date) = filters.filter_date {
+            query = query.bind(filter_date.start).bind(filter_date.end + 1);
+        }
+
+        if let Some(filter_date_modif) = filters.filter_date_modif {
+            query = query.bind(filter_date_modif.start).bind(filter_date_modif.end + 1);
+        }
+
+        if let Some(filter_search) = filters.filter_search {
+            query = query.bind(format!("%{}%", filter_search.query));
+        }
+
+        let mut notes = query
             .fetch_all(&mut *transaction)
             .await
             .map_to_status()?;
@@ -81,7 +151,7 @@ impl Notes for AppState {
             ",
             &note_ids, 0,
         ))
-            .bind_slice(&note_ids)
+            .bind_iter(&note_ids)
             .fetch_all(&mut *transaction)
             .await
             .map_to_status()?;
@@ -95,7 +165,7 @@ impl Notes for AppState {
             ",
             &note_ids, 0,
         ))
-            .bind_slice(&note_ids)
+            .bind_iter(&note_ids)
             .fetch_all(&mut *transaction)
             .await
             .map_to_status()?;
@@ -109,7 +179,7 @@ impl Notes for AppState {
         // since all the arrays are sorted by note id,
         // in theory this implementation iterates through each loop only once
 
-        for note in notes.iter_mut().rev() {
+        for note in notes.iter_mut() {
 
             while !tags.is_empty() {
                 let note_id = tags[tags.len() - 1].note_id
@@ -133,6 +203,21 @@ impl Notes for AppState {
                 }
             }
 
+        }
+
+        // sorting the notes
+
+        match sort_asc {
+            true => match sort_type {
+                SortType::Date => notes.sort_by(|a, b| a.created.cmp(&b.created)),
+                SortType::DateModif => notes.sort_by(|a, b| a.last_edited.cmp(&b.last_edited)),
+                SortType::Title => notes.sort_by(|a, b| a.title.cmp(&b.title)),
+            },
+            false => match sort_type {
+                SortType::Date => notes.sort_by(|a, b| b.created.cmp(&a.created)),
+                SortType::DateModif => notes.sort_by(|a, b| b.last_edited.cmp(&a.last_edited)),
+                SortType::Title => notes.sort_by(|a, b| b.title.cmp(&a.title)),
+            },
         }
 
         Ok(Response::new(NoteList { notes }))
@@ -209,7 +294,7 @@ impl Notes for AppState {
                 ",
                 &file_ids, 1,
             ))
-                .bind(req_body.user_id).bind_slice(&file_ids)
+                .bind(req_body.user_id).bind_iter(&file_ids)
                 .fetch_all(&mut *transaction)
                 .await
                 .map_to_status()?,
