@@ -1,30 +1,16 @@
 use crate::proto::notes::notes_server::{Notes, NotesServer};
-use crate::proto::notes::sort::SortType;
+use crate::proto::notes::sort;
 use crate::proto::notes::{AttachTagReq, CreateNoteReq, DeleteNoteReq, DetachTagReq, Empty, Note, NoteList, ReadNotesReq, UpdateNoteReq};
 use crate::proto::{files::File, tags::Tag};
 use crate::types::{AppState, BindIter, HandleServiceError, IDWrapper, ServiceResult};
 
+use helpers::*;
 use tonic::{Request, Response};
+
+mod helpers;
 
 pub fn get_service(state: AppState) -> NotesServer<AppState> {
     NotesServer::new(state)
-}
-
-/// Finds the first occurence of "()" inside of the query and pushes Postgres' "$" placeholders into it
-fn fill_tuple_placeholder<V>(query: &str, arr: &[V], index_offset: usize) -> String {
-    let Some(paren_idx) = query.find("()") else {
-        return query.to_owned();
-    };
-
-    let placeholders_str = (1..=arr.len())
-        .map(|i| format!("${}", i + index_offset))
-        .collect::<Vec<String>>()
-        .join(",");
-
-    let (s, e) = query.split_at(paren_idx + 1);
-    let query_str = format!("{s}{placeholders_str}{e}");
-
-    query_str
 }
 
 #[tonic::async_trait]
@@ -51,83 +37,23 @@ impl Notes for AppState {
     ) -> ServiceResult<NoteList> {
 
         let req_body = request.into_inner();
-
         println!("READ NOTES BODY: {:#?}", req_body);
 
-        // getting sort params
+        // extracting parameters from the body and building the query
 
+        let user_id = req_body.user_id;
         let sort = req_body.sort.unwrap();
-        let sort_asc = sort.asc;
-        let sort_type = SortType::try_from(sort.sort_type).unwrap();
-
-        // getting filter params and building the query
-
         let filters = req_body.filters.unwrap();
 
-        let mut query_str: String = "SELECT * FROM notes WHERE user_id = $1".into();
-        let mut param_num = 1;
+        let query_str = build_read_notes_query_str(&sort, &filters);
+        let query = build_read_notes_query(&query_str, user_id, &filters);
 
-        if let Some(filter_tags) = &filters.filter_tags {
-            if !filter_tags.tag_ids.is_empty() {
-                query_str += "\nAND id IN (SELECT note_id FROM note_tags WHERE tag_id IN ())";
-                query_str = fill_tuple_placeholder(&query_str, &filter_tags.tag_ids, param_num);
-                param_num += filter_tags.tag_ids.len();
-            } else {
-                query_str += "\nAND id NOT IN (SELECT note_id FROM note_tags)";
-            }
-        }
-
-        if filters.filter_date.is_some() {
-            query_str += &format!(
-                "\nAND EXTRACT(EPOCH FROM created) BETWEEN ${} AND ${}",
-                param_num + 1, param_num + 2,
-            );
-            param_num += 2;
-        }
-
-        if filters.filter_date_modif.is_some() {
-            query_str += &format!(
-                "\nAND EXTRACT(EPOCH FROM last_edited) BETWEEN ${} AND ${}",
-                param_num + 1, param_num + 2,
-            );
-            param_num += 2;
-        }
-
-        if filters.filter_search.is_some() {
-            query_str += &format!("\nAND title ILIKE ${}", param_num + 1);
-        }
-
-        query_str += "\nORDER BY id DESC;";
-
-        query_str = dbg!(query_str);
-
-        // binding values and fetching notes
+        // fetching notes
 
         let mut transaction = self.pool
             .begin()
             .await
             .map_to_status()?;
-
-        let mut query = sqlx::query_as::<_, Note>(&query_str)
-            .bind(req_body.user_id);
-
-        if let Some(filter_tags) = filters.filter_tags {
-            if !filter_tags.tag_ids.is_empty() {
-                query = query.bind_iter(filter_tags.tag_ids);
-            }
-        }
-
-        if let Some(filter_date) = filters.filter_date {
-            query = query.bind(filter_date.start).bind(filter_date.end + 1);
-        }
-
-        if let Some(filter_date_modif) = filters.filter_date_modif {
-            query = query.bind(filter_date_modif.start).bind(filter_date_modif.end + 1);
-        }
-
-        if let Some(filter_search) = filters.filter_search {
-            query = query.bind(format!("%{}%", filter_search.query));
-        }
 
         let mut notes = query
             .fetch_all(&mut *transaction)
@@ -142,13 +68,27 @@ impl Notes for AppState {
 
         // fetching relevant tags and files
 
+        let attachment_sort_field = match sort.sort_field() {
+            sort::Field::Date => SortField::CREATED,
+            sort::Field::DateModif => SortField::LAST_EDITED,
+            sort::Field::Title => SortField::TITLE,
+        };
+
+        // the type here is reversed on purpose. specifically, it allows
+        // efficient assignment of attachments to their respective notes
+        let attachment_sort_type = match sort.sort_type() {
+            sort::Type::Asc => SortType::DESC,
+            sort::Type::Desc => SortType::ASC,
+        };
+
         let mut tags = sqlx::query_as::<_, Tag>(&fill_tuple_placeholder(
-            r"
+            &format!(r"
                 SELECT t.*, nt.note_id FROM tags AS t
-                INNER JOIN note_tags AS nt
-                ON nt.note_id IN () AND nt.tag_id = t.id
-                ORDER BY nt.note_id ASC, t.id DESC;
-            ",
+                INNER JOIN note_tags AS nt ON nt.tag_id = t.id
+                INNER JOIN notes AS n ON nt.note_id = n.id
+                WHERE n.id IN ()
+                ORDER BY n.{} {}, n.id ASC, t.id DESC;
+            ", attachment_sort_field, attachment_sort_type),
             &note_ids, 0,
         ))
             .bind_iter(&note_ids)
@@ -157,12 +97,13 @@ impl Notes for AppState {
             .map_to_status()?;
 
         let mut files = sqlx::query_as::<_, File>(&fill_tuple_placeholder(
-            r"
+            &format!(r"
                 SELECT f.*, nf.note_id FROM files AS f
-                INNER JOIN note_files AS nf
-                ON nf.note_id IN () AND nf.file_id = f.id
-                ORDER BY nf.note_id ASC, f.id DESC;
-            ",
+                INNER JOIN note_files AS nf ON nf.file_id = f.id
+                INNER JOIN notes AS n ON nf.note_id = n.id
+                WHERE n.id IN ()
+                ORDER BY n.{} {}, n.id ASC, f.id DESC;
+            ", attachment_sort_field, attachment_sort_type),
             &note_ids, 0,
         ))
             .bind_iter(&note_ids)
@@ -176,49 +117,42 @@ impl Notes for AppState {
             .map_to_status()?;
 
         // assinging tags and files to their respective notes.
-        // since all the arrays are sorted by note id,
-        // in theory this implementation iterates through each loop only once
+        // since the arrays are properly sorted, this implementation
+        // "iterates" through each of these three arrays only once
 
-        for note in notes.iter_mut() {
+        let mut tag_note_id = match tags.last() {
+            Some(t) => t.note_id.unwrap(),
+            None => 0,
+        };
 
-            while !tags.is_empty() {
-                let note_id = tags[tags.len() - 1].note_id
-                    .ok_or(tonic::Status::internal("Could not get a note id from a tag"))?;
+        let mut file_note_id = match files.last() {
+            Some(f) => f.note_id.unwrap(),
+            None => 0,
+        };
 
-                if note_id == note.id {
-                    note.tags.push(tags.pop().unwrap());
-                } else {
-                    break;
+        for note in &mut notes {
+
+            while !tags.is_empty() && tag_note_id == note.id {
+                note.tags.push(tags.pop().unwrap());
+
+                if let Some(t) = tags.last() {
+                    tag_note_id = t.note_id.unwrap();
                 }
             }
 
-            while !files.is_empty() {
-                let note_id = files[files.len() - 1].note_id
-                    .ok_or(tonic::Status::internal("Could not get a note id from a file"))?;
+            while !files.is_empty() && file_note_id == note.id {
+                note.files.push(files.pop().unwrap());
 
-                if note_id == note.id {
-                    note.files.push(files.pop().unwrap());
-                } else {
-                    break;
+                if let Some(f) = files.last() {
+                    file_note_id = f.note_id.unwrap();
                 }
             }
 
         }
 
-        // sorting the notes
-
-        match sort_asc {
-            true => match sort_type {
-                SortType::Date => notes.sort_by(|a, b| a.created.cmp(&b.created)),
-                SortType::DateModif => notes.sort_by(|a, b| a.last_edited.cmp(&b.last_edited)),
-                SortType::Title => notes.sort_by(|a, b| a.title.cmp(&b.title)),
-            },
-            false => match sort_type {
-                SortType::Date => notes.sort_by(|a, b| b.created.cmp(&a.created)),
-                SortType::DateModif => notes.sort_by(|a, b| b.last_edited.cmp(&a.last_edited)),
-                SortType::Title => notes.sort_by(|a, b| b.title.cmp(&a.title)),
-            },
-        }
+        // delete this later
+        assert_eq!(tags, Vec::new());
+        assert_eq!(files, Vec::new());
 
         Ok(Response::new(NoteList { notes }))
     }
@@ -285,7 +219,7 @@ impl Notes for AppState {
         // deleting related files from the db
 
         let files = match file_ids.len() {
-            0 => vec![],
+            0 => Vec::new(),
             _ => sqlx::query_as::<_, File>(&fill_tuple_placeholder(
                 r"
                     DELETE FROM files
