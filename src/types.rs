@@ -17,6 +17,11 @@ pub struct IDWrapper {
     pub id: i32,
 }
 
+#[derive(FromRow)]
+pub struct CountWrapper {
+    pub count: i64,
+}
+
 #[derive(Clone)]
 pub struct Interceptor {
     pub auth_value: String,
