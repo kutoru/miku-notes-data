@@ -42,13 +42,14 @@ impl Notes for AppState {
         // extracting parameters from the body and building the query
 
         let user_id = req_body.user_id;
+        let pagination = req_body.pagination.unwrap();
         let sort = req_body.sort.unwrap();
         let filters = req_body.filters.unwrap();
 
-        let query_str = build_read_notes_query_str(&sort, &filters);
-        let query = build_read_notes_query(&query_str, user_id, &filters);
+        let (query_str, count_str) = dbg!(build_read_notes_query_strs(&sort, &filters));
+        let (query, count_query) = build_read_notes_queries(&query_str, &count_str, user_id, &pagination, &filters);
 
-        // fetching notes
+        // executing the two queries
 
         let mut transaction = self.pool
             .begin()
@@ -60,10 +61,16 @@ impl Notes for AppState {
             .await
             .map_to_status()?;
 
+        let total_count = count_query
+            .fetch_one(&mut *transaction)
+            .await
+            .map_to_status()?
+            .count as i32;
+
         let note_ids: Vec<_> = notes.iter().map(|n| n.id).collect();
 
         if note_ids.is_empty() {
-            return Ok(Response::new(NoteList { notes: vec![] }));
+            return Ok(Response::new(NoteList { notes: Vec::new(), total_count }));
         }
 
         // fetching relevant tags and files
@@ -154,7 +161,7 @@ impl Notes for AppState {
         assert_eq!(tags, Vec::new());
         assert_eq!(files, Vec::new());
 
-        Ok(Response::new(NoteList { notes }))
+        Ok(Response::new(NoteList { notes, total_count }))
     }
 
     async fn update_note(
