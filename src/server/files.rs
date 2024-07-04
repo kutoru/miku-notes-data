@@ -1,3 +1,4 @@
+use crate::proto::files::create_file_metadata::AttachId;
 use crate::proto::files::files_server::{Files, FilesServer};
 use crate::proto::files::{CreateFileReq, DeleteFileReq, DownloadFileMetadata, DownloadFileReq, Empty, File, FileData};
 use crate::types::{AppState, HandleServiceError, ServiceResult};
@@ -30,20 +31,33 @@ impl Files for AppState {
         let first_part = stream.next().await
             .ok_or(Status::invalid_argument("First message in the stream is invalid"))??;
 
-        let (user_id, note_id, file_name, expected_parts) = match first_part.metadata {
-            Some(m) => (m.user_id, m.note_id, m.name, m.expected_parts),
+        let (user_id, attach_id, file_name, expected_parts) = match first_part.metadata {
+            Some(m) => (m.user_id, m.attach_id.unwrap(), m.name, m.expected_parts),
             None => return Err(Status::invalid_argument("First message in the stream is invalid")),
         };
 
-        println!("metadata: {}, {}, {}, {}", user_id, note_id, file_name, expected_parts);
+        println!("metadata: {}, {:?}, {}, {}", user_id, attach_id, file_name, expected_parts);
 
-        // making sure the note that the file is going to be attached to exists
+        // making sure the note or the shelf that the file is going to be attached to exists
 
-        sqlx::query("SELECT id FROM notes WHERE id = $1 AND user_id = $2;")
-            .bind(note_id).bind(user_id)
+        let (query, attach_id_val) = match attach_id {
+            AttachId::NoteId(note_id) => (
+                sqlx::query("SELECT id FROM notes WHERE id = $1 AND user_id = $2;"),
+                note_id,
+            ),
+            AttachId::ShelfId(shelf_id) => (
+                sqlx::query("SELECT id FROM shelves WHERE id = $1 AND user_id = $2;"),
+                shelf_id,
+            ),
+        };
+
+        query
+            .bind(attach_id_val).bind(user_id)
             .fetch_one(&self.pool)
             .await
             .map_to_status()?;
+
+        // preparing some file stuff and writing the first chunk
 
         let file_hash = uuid::Uuid::new_v4().to_string();
         let file_path = "./files/".to_owned() + &file_hash;
@@ -85,13 +99,18 @@ impl Files for AppState {
             .map_to_status()?;
 
         let mut new_file_info = sqlx::query_as::<_, File>("INSERT INTO files (user_id, hash, name, size) VALUES ($1, $2, $3, $4) RETURNING *;")
-            .bind(user_id).bind(file_hash).bind(file_name).bind(size).bind(note_id)
+            .bind(user_id).bind(file_hash).bind(file_name).bind(size)
             .fetch_one(&mut *transaction)
             .await
             .map_to_status()?;
 
-        sqlx::query("INSERT INTO note_files (note_id, file_id) VALUES ($1, $2);")
-            .bind(note_id).bind(new_file_info.id)
+        let query = match attach_id {
+            AttachId::NoteId(_) => sqlx::query("INSERT INTO note_files (note_id, file_id) VALUES ($1, $2);"),
+            AttachId::ShelfId(_) => sqlx::query("INSERT INTO shelf_files (shelf_id, file_id) VALUES ($1, $2);"),
+        };
+
+        query
+            .bind(attach_id_val).bind(new_file_info.id)
             .execute(&mut *transaction)
             .await
             .map_to_status()?;
@@ -101,7 +120,7 @@ impl Files for AppState {
             .await
             .map_to_status()?;
 
-        new_file_info.note_id = Some(note_id);
+        new_file_info.attach_id = Some(attach_id_val);
         Ok(Response::new(new_file_info))
     }
 

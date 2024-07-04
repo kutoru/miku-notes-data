@@ -90,7 +90,7 @@ impl Notes for AppState {
 
         let mut tags = sqlx::query_as::<_, Tag>(&fill_tuple_placeholder(
             &format!(r"
-                SELECT t.*, nt.note_id FROM tags AS t
+                SELECT t.*, n.id AS note_id FROM tags AS t
                 INNER JOIN note_tags AS nt ON nt.tag_id = t.id
                 INNER JOIN notes AS n ON nt.note_id = n.id
                 WHERE n.id IN ()
@@ -105,7 +105,7 @@ impl Notes for AppState {
 
         let mut files = sqlx::query_as::<_, File>(&fill_tuple_placeholder(
             &format!(r"
-                SELECT f.*, nf.note_id FROM files AS f
+                SELECT f.*, n.id AS attach_id FROM files AS f
                 INNER JOIN note_files AS nf ON nf.file_id = f.id
                 INNER JOIN notes AS n ON nf.note_id = n.id
                 WHERE n.id IN ()
@@ -133,7 +133,7 @@ impl Notes for AppState {
         };
 
         let mut file_note_id = match files.last() {
-            Some(f) => f.note_id.unwrap(),
+            Some(f) => f.attach_id.unwrap(),
             None => 0,
         };
 
@@ -151,7 +151,7 @@ impl Notes for AppState {
                 note.files.push(files.pop().unwrap());
 
                 if let Some(f) = files.last() {
-                    file_note_id = f.note_id.unwrap();
+                    file_note_id = f.attach_id.unwrap();
                 }
             }
 

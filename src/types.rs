@@ -110,7 +110,7 @@ impl sqlx::FromRow<'_, PgRow> for File {
             name: row.try_get("name")?,
             size: row.try_get("size")?,
             created: row.try_get_unix("created")?,
-            note_id: row.try_get("note_id").ok(),
+            attach_id: row.try_get("attach_id").ok(),
         })
     }
 }
