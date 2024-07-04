@@ -55,7 +55,7 @@ CREATE TABLE note_tags (
 
 CREATE TABLE shelves (
     id SERIAL PRIMARY KEY,
-    user_id INT NOT NULL,
+    user_id INT UNIQUE NOT NULL,
     text VARCHAR(2500) NOT NULL,
     created TIMESTAMP DEFAULT NOW() NOT NULL,
     last_edited TIMESTAMP DEFAULT NOW() NOT NULL,
