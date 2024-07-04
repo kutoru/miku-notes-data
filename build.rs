@@ -8,6 +8,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "./proto/notes.proto",
                 "./proto/tags.proto",
                 "./proto/files.proto",
+                "./proto/shelves.proto",
             ],
             &["proto"],
         )?;

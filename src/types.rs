@@ -2,7 +2,7 @@ use sqlx::{postgres::{PgArguments, PgRow}, prelude::FromRow, PgPool, Postgres, R
 use tonic::{async_trait, transport::Body, Response, Status};
 use tonic_middleware::RequestInterceptor;
 
-use crate::proto::{notes::Note, tags::Tag, files::File};
+use crate::proto::{files::File, notes::Note, shelves::Shelf, tags::Tag};
 
 pub type ServiceResult<T> = Result<Response<T>, Status>;
 
@@ -138,6 +138,20 @@ impl sqlx::FromRow<'_, PgRow> for Note {
             last_edited: row.try_get_unix("last_edited")?,
             times_edited: row.try_get("times_edited")?,
             tags: vec![],
+            files: vec![],
+        })
+    }
+}
+
+impl sqlx::FromRow<'_, PgRow> for Shelf {
+    fn from_row(row: &'_ PgRow) -> Result<Self, sqlx::Error> {
+        Ok(Shelf {
+            id: row.try_get("id")?,
+            user_id: row.try_get("user_id")?,
+            text: row.try_get("text")?,
+            created: row.try_get_unix("created")?,
+            last_edited: row.try_get_unix("last_edited")?,
+            times_edited: row.try_get("times_edited")?,
             files: vec![],
         })
     }
