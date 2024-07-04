@@ -230,6 +230,12 @@ impl Files for AppState {
             .await
             .map_to_status()?;
 
+        sqlx::query("DELETE FROM shelf_files WHERE file_id = $1;")
+            .bind(req_body.id)
+            .execute(&mut *transaction)
+            .await
+            .map_to_status()?;
+
         let deleted_file = sqlx::query_as::<_, File>("DELETE FROM files WHERE id = $1 AND user_id = $2 RETURNING *;")
             .bind(req_body.id).bind(req_body.user_id)
             .fetch_one(&mut *transaction)
