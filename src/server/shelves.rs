@@ -1,4 +1,4 @@
-use crate::{proto::{files::File, notes::Note, shelves::{shelves_server::{Shelves, ShelvesServer}, ClearShelfReq, ConvertToNoteReq, ReadShelfReq, Shelf, UpdateShelfReq}}, types::{AppState, HandleServiceError, IDWrapper, ServiceResult}};
+use crate::{proto::{files::File, notes::Note, shelves::{shelves_server::{Shelves, ShelvesServer}, ClearShelfReq, ConvertToNoteReq, ReadShelfReq, Shelf, UpdateShelfReq}}, types::{fill_tuple_placeholder, AppState, BindIter, HandleServiceError, IDWrapper, ServiceResult}};
 
 use tonic::{Request, Response};
 
@@ -71,7 +71,55 @@ impl Shelves for AppState {
         &self,
         request: Request<ClearShelfReq>,
     ) -> ServiceResult<Shelf> {
-        todo!()
+
+        let req_body = request.into_inner();
+
+        let mut transaction = self.pool
+            .begin()
+            .await
+            .map_to_status()?;
+
+        let shelf = sqlx::query_as::<_, Shelf>(r"
+            UPDATE shelves
+            SET text = '', last_edited = NOW(), times_edited = times_edited + 1
+            WHERE user_id = $1 RETURNING *;
+        ")
+            .bind(req_body.user_id)
+            .fetch_one(&mut *transaction)
+            .await
+            .map_to_status()?;
+
+        let file_ids: Vec<_> = sqlx::query_as::<_, IDWrapper>("DELETE FROM shelf_files WHERE shelf_id = $1 RETURNING file_id AS id;")
+            .bind(shelf.id)
+            .fetch_all(&mut *transaction)
+            .await
+            .map_to_status()?
+            .iter()
+            .map(|v| v.id)
+            .collect();
+
+        let files = sqlx::query_as::<_, File>(&fill_tuple_placeholder(
+            "DELETE FROM files WHERE user_id = $1 AND id IN () RETURNING *;",
+            &file_ids, 1,
+        ))
+            .bind(req_body.user_id).bind_iter(file_ids)
+            .fetch_all(&mut *transaction)
+            .await
+            .map_to_status()?;
+
+        transaction
+            .commit()
+            .await
+            .map_to_status()?;
+
+        for file in &files {
+            let file_path = format!("./files/{}", file.hash);
+            if let Err(e) = tokio::fs::remove_file(file_path).await {
+                println!("Could not delete a file: {:?};\nBecause error: {:?};", file, e);
+            }
+        }
+
+        Ok(Response::new(shelf))
     }
 
     async fn convert_to_note(

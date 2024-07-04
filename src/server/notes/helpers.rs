@@ -16,24 +16,6 @@ impl SortType {
     pub const DESC: &'static str = "DESC";
 }
 
-/// finds the first occurence of "()" inside of the `query`,
-/// and for the length of the `arr`, pushes Postgres' "$" placeholders into it
-pub fn fill_tuple_placeholder<V>(query: &str, arr: &[V], index_offset: usize) -> String {
-    let Some(paren_idx) = query.find("()") else {
-        return query.to_owned();
-    };
-
-    let placeholders_str = (1..=arr.len())
-        .map(|i| format!("${}", i + index_offset))
-        .collect::<Vec<String>>()
-        .join(",");
-
-    let (s, e) = query.split_at(paren_idx + 1);
-    let query_str = format!("{s}{placeholders_str}{e}");
-
-    query_str
-}
-
 type Query<'q, T> = QueryAs<'q, Postgres, T, PgArguments>;
 
 /// builds new db queries for both fetching Notes and fetching total count of Notes

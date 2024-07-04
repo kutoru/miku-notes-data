@@ -2,7 +2,7 @@ use crate::proto::notes::notes_server::{Notes, NotesServer};
 use crate::proto::notes::sort;
 use crate::proto::notes::{AttachTagReq, CreateNoteReq, DeleteNoteReq, DetachTagReq, Empty, Note, NoteList, ReadNotesReq, UpdateNoteReq};
 use crate::proto::{files::File, tags::Tag};
-use crate::types::{AppState, BindIter, HandleServiceError, IDWrapper, ServiceResult};
+use crate::types::{fill_tuple_placeholder, AppState, BindIter, HandleServiceError, IDWrapper, ServiceResult};
 
 use helpers::*;
 use tonic::{Request, Response};

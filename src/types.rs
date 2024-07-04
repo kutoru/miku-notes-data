@@ -65,19 +65,22 @@ impl<T> HandleServiceError<T> for Result<T, sqlx::Error> {
     }
 }
 
-// immediately try to convert db's timestamp type into unix ms
-trait FieldToUnix {
-    fn try_get_unix(&self, field_name: &str) -> Result<i64, sqlx::Error>;
-}
-impl FieldToUnix for PgRow {
-    fn try_get_unix(&self, field_name: &str) -> Result<i64, sqlx::Error> {
-        Ok(
-            self
-                .try_get::<chrono::NaiveDateTime, &str>(field_name)?
-                .and_utc()
-                .timestamp()
-        )
-    }
+/// finds the first occurence of "()" inside of the `query`,
+/// and for the length of the `arr`, pushes Postgres' "$" placeholders into it
+pub fn fill_tuple_placeholder<V>(query: &str, arr: &[V], index_offset: usize) -> String {
+    let Some(paren_idx) = query.find("()") else {
+        return query.to_owned();
+    };
+
+    let placeholders_str = (1..=arr.len())
+        .map(|i| format!("${}", i + index_offset))
+        .collect::<Vec<String>>()
+        .join(",");
+
+    let (s, e) = query.split_at(paren_idx + 1);
+    let query_str = format!("{s}{placeholders_str}{e}");
+
+    query_str
 }
 
 // method on sqlx queries to bind values directly from a slice
@@ -98,6 +101,21 @@ impl<'q, T> BindIter<'q> for sqlx::query::QueryAs<'q, Postgres, T, PgArguments> 
             self = self.bind(item);
         }
         self
+    }
+}
+
+// immediately try to convert db's timestamp type into unix ms
+trait FieldToUnix {
+    fn try_get_unix(&self, field_name: &str) -> Result<i64, sqlx::Error>;
+}
+impl FieldToUnix for PgRow {
+    fn try_get_unix(&self, field_name: &str) -> Result<i64, sqlx::Error> {
+        Ok(
+            self
+                .try_get::<chrono::NaiveDateTime, &str>(field_name)?
+                .and_utc()
+                .timestamp()
+        )
     }
 }
 
