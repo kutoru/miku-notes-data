@@ -3,8 +3,6 @@ use crate::proto::files::files_server::{Files, FilesServer};
 use crate::proto::files::{CreateFileMetadata, CreateFileReq, DeleteFileReq, DownloadFileMetadata, DownloadFileReq, Empty, File, FileData};
 use crate::types::{AppState, HandleServiceError, ServiceResult};
 
-use std::sync::atomic;
-use scopeguard::defer;
 use tokio::io::{AsyncWriteExt, AsyncReadExt};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
@@ -15,6 +13,25 @@ pub fn get_service(state: AppState) -> FilesServer<AppState> {
     let chunk_size = state.chunk_size;
     FilesServer::new(state)
         .max_decoding_message_size(1024 * 1024 * (chunk_size + 1))  // 1 extra mb for fields other than data
+}
+
+#[derive(Debug)]
+struct FileDefer {
+    file_path: String,
+    delete: bool,
+}
+
+// the struct's drop here is used as a golang-like defer.
+// in theory, synchronously deleting a file might not be great (performance-wise).
+// if it turns out to be a big issue, this crate could be used https://crates.io/crates/defer-drop
+impl Drop for FileDefer {
+    fn drop(&mut self) {
+        if self.delete {
+            if let Err(e) = std::fs::remove_file(&self.file_path) {
+                println!("Could not delete a file: {}; {:?}", self.file_path, e);
+            }
+        }
+    }
 }
 
 #[tonic::async_trait]
@@ -69,17 +86,10 @@ impl Files for AppState {
         let file_path = format!("./files/{}", file_hash);
         let mut file = tokio::fs::File::create_new(&file_path).await?;
 
-        let delete_file = atomic::AtomicBool::new(true);
-        let file_path_copy = file_path.clone();
-
-        // simple golang-like defer
-        defer! {
-            if dbg!(delete_file.load(atomic::Ordering::Relaxed)) {
-                if let Err(e) = std::fs::remove_file(&file_path_copy) {
-                    println!("Could not delete a file: {}; {:?}", file_path_copy, e);
-                }
-            }
-        }
+        let mut file_defer = FileDefer {
+            file_path: file_path.clone(),
+            delete: true,
+        };
 
         file.set_max_buf_size(1024 * 1024 * self.chunk_size);
         let bytes_written = file.write(&first_part.data).await?;
@@ -136,7 +146,7 @@ impl Files for AppState {
             .await
             .map_to_status()?;
 
-        delete_file.store(false, atomic::Ordering::Relaxed);
+        file_defer.delete = false;
 
         new_file_info.attach_id = Some(attach_id_val);
         Ok(Response::new(new_file_info))

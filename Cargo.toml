@@ -15,7 +15,6 @@ dotenvy = "0.15"
 tonic-middleware = "0.1.4"
 tokio-stream = "0.1.15"
 uuid = { version = "1.8.0", features = ["v4", "fast-rng"] }
-scopeguard = "1.2.0"
 
 [build-dependencies]
 tonic-build = "0.11"

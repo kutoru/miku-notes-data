@@ -1002,7 +1002,6 @@ dependencies = [
  "dotenvy",
  "prost",
  "prost-types",
- "scopeguard",
  "sqlx",
  "tokio",
  "tokio-stream",
