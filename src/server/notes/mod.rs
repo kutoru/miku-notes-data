@@ -5,7 +5,7 @@ use crate::proto::{files::File, tags::Tag};
 use crate::types::{fill_tuple_placeholder, AppState, BindIter, HandleServiceError, IDWrapper, ServiceResult};
 
 use helpers::*;
-use tonic::{Request, Response};
+use tonic::{Request, Response, Status};
 
 mod helpers;
 
@@ -41,10 +41,14 @@ impl Notes for AppState {
 
         // extracting parameters from the body and building the query
 
-        let user_id = req_body.user_id;
-        let pagination = req_body.pagination.unwrap();
-        let sort = req_body.sort.unwrap();
-        let filters = req_body.filters.unwrap();
+        let ReadNotesReq {
+            user_id,
+            pagination: Some(pagination),
+            sort: Some(sort),
+            filters: Some(filters),
+        } = req_body else {
+            return Err(Status::invalid_argument("invalid field"));
+        };
 
         let (query_str, count_str) = dbg!(build_read_notes_query_strs(&sort, &filters));
         let (query, count_query) = build_read_notes_queries(&query_str, &count_str, user_id, &pagination, &filters);

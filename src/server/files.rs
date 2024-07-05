@@ -1,6 +1,6 @@
 use crate::proto::files::create_file_metadata::AttachId;
 use crate::proto::files::files_server::{Files, FilesServer};
-use crate::proto::files::{CreateFileReq, DeleteFileReq, DownloadFileMetadata, DownloadFileReq, Empty, File, FileData};
+use crate::proto::files::{CreateFileMetadata, CreateFileReq, DeleteFileReq, DownloadFileMetadata, DownloadFileReq, Empty, File, FileData};
 use crate::types::{AppState, HandleServiceError, ServiceResult};
 
 use std::sync::atomic;
@@ -33,9 +33,13 @@ impl Files for AppState {
         let first_part = stream.next().await
             .ok_or(Status::invalid_argument("First message in the stream is invalid"))??;
 
-        let (user_id, attach_id, file_name, expected_parts) = match first_part.metadata {
-            Some(m) => (m.user_id, m.attach_id.unwrap(), m.name, m.expected_parts),
-            None => return Err(Status::invalid_argument("First message in the stream is invalid")),
+        let Some(CreateFileMetadata {
+            user_id,
+            attach_id: Some(attach_id),
+            expected_parts,
+            name: file_name,
+        }) = first_part.metadata else {
+            return Err(Status::invalid_argument("First message in the stream is invalid"));
         };
 
         println!("metadata: {}, {:?}, {}, {}", user_id, attach_id, file_name, expected_parts);
@@ -160,7 +164,7 @@ impl Files for AppState {
         let mut file = tokio::fs::File::open(format!("./files/{}", file_info.hash)).await
             .map_err(|_| tonic::Status::internal("could not find the file"))?;
 
-        let file_size = file.metadata().await.unwrap().len();
+        let file_size = file.metadata().await?.len();
         // let chunk_size = (1024 * 1024 * self.chunk_size) as u64;
         let chunk_size = 1024 * 1024 * 3 + 1024 * 512;  // unforunately, anything around and above 4mb doesn't get accepted by browsers or something
         let expected_parts = (file_size / chunk_size) as i32 + (file_size % chunk_size > 0) as i32;
