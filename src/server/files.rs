@@ -3,6 +3,8 @@ use crate::proto::files::files_server::{Files, FilesServer};
 use crate::proto::files::{CreateFileReq, DeleteFileReq, DownloadFileMetadata, DownloadFileReq, Empty, File, FileData};
 use crate::types::{AppState, HandleServiceError, ServiceResult};
 
+use std::sync::atomic;
+use scopeguard::defer;
 use tokio::io::{AsyncWriteExt, AsyncReadExt};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
@@ -60,9 +62,21 @@ impl Files for AppState {
         // preparing some file stuff and writing the first chunk
 
         let file_hash = uuid::Uuid::new_v4().to_string();
-        let file_path = "./files/".to_owned() + &file_hash;
-
+        let file_path = format!("./files/{}", file_hash);
         let mut file = tokio::fs::File::create_new(&file_path).await?;
+
+        let delete_file = atomic::AtomicBool::new(true);
+        let file_path_copy = file_path.clone();
+
+        // simple golang-like defer
+        defer! {
+            if dbg!(delete_file.load(atomic::Ordering::Relaxed)) {
+                if let Err(e) = std::fs::remove_file(&file_path_copy) {
+                    println!("Could not delete a file: {}; {:?}", file_path_copy, e);
+                }
+            }
+        }
+
         file.set_max_buf_size(1024 * 1024 * self.chunk_size);
         let bytes_written = file.write(&first_part.data).await?;
 
@@ -76,7 +90,6 @@ impl Files for AppState {
             current_part += 1;
 
             if current_part > expected_parts {
-                tokio::fs::remove_file(file_path).await?;
                 return Err(Status::invalid_argument("Amount of parts exceeded the expected amount"));
             }
 
@@ -86,7 +99,6 @@ impl Files for AppState {
         }
 
         if current_part < expected_parts {
-            tokio::fs::remove_file(file_path).await?;
             return Err(Status::invalid_argument("Amount of parts is smaller than the expected amount"));
         }
 
@@ -119,6 +131,8 @@ impl Files for AppState {
             .commit()
             .await
             .map_to_status()?;
+
+        delete_file.store(false, atomic::Ordering::Relaxed);
 
         new_file_info.attach_id = Some(attach_id_val);
         Ok(Response::new(new_file_info))
