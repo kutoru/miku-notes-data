@@ -33,7 +33,7 @@ impl Shelves for AppState {
         };
 
         let files = sqlx::query_as::<_, File>(r"
-            SELECT f.*, sf.file_id AS attach_id FROM files AS f
+            SELECT f.*, sf.shelf_id AS attach_id FROM files AS f
             INNER JOIN shelf_files AS sf ON sf.file_id = f.id
             WHERE sf.shelf_id = $1
             ORDER BY f.id ASC;
