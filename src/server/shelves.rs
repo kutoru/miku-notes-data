@@ -98,14 +98,17 @@ impl Shelves for AppState {
             .map(|v| v.id)
             .collect();
 
-        let files = sqlx::query_as::<_, File>(&fill_tuple_placeholder(
-            "DELETE FROM files WHERE user_id = $1 AND id IN () RETURNING *;",
-            &file_ids, 1,
-        ))
-            .bind(req_body.user_id).bind_iter(file_ids)
-            .fetch_all(&mut *transaction)
-            .await
-            .map_to_status()?;
+        let files = match file_ids.len() {
+            0 => Vec::new(),
+            _ => sqlx::query_as::<_, File>(&fill_tuple_placeholder(
+                "DELETE FROM files WHERE user_id = $1 AND id IN () RETURNING *;",
+                &file_ids, 1,
+            ))
+                .bind(req_body.user_id).bind_iter(file_ids)
+                .fetch_all(&mut *transaction)
+                .await
+                .map_to_status()?
+        };
 
         transaction
             .commit()
