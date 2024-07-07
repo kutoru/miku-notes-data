@@ -3,7 +3,6 @@ use crate::proto::files::files_server::{Files, FilesServer};
 use crate::proto::files::{CreateFileMetadata, CreateFileReq, DeleteFileReq, DownloadFileMetadata, DownloadFileReq, Empty, File, FileData};
 use crate::types::{AppState, HandleServiceError, ServiceResult};
 
-use std::cmp::min;
 use tokio::io::{AsyncWriteExt, AsyncReadExt};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
@@ -169,7 +168,6 @@ impl Files for AppState {
 
         let file_size = file.metadata().await?.len() as usize;
         let chunk_size = 1024 * 1024 * self.chunk_size;
-        let chunk_size = min(chunk_size, 1024 * 1024 * 3 + 1024 * 512);  // unforunately, anything around and above 4mb doesn't get accepted by browsers or something
 
         file.set_max_buf_size(chunk_size);
         let mut buffer = vec![0; chunk_size];
