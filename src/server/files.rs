@@ -3,6 +3,7 @@ use crate::proto::files::files_server::{Files, FilesServer};
 use crate::proto::files::{CreateFileMetadata, CreateFileReq, DeleteFileReq, DownloadFileMetadata, DownloadFileReq, Empty, File, FileData};
 use crate::types::{AppState, HandleServiceError, ServiceResult};
 
+use std::cmp::min;
 use tokio::io::{AsyncWriteExt, AsyncReadExt};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
@@ -48,18 +49,17 @@ impl Files for AppState {
         // processing the first part
 
         let first_part = stream.next().await
-            .ok_or(Status::invalid_argument("First message in the stream is invalid"))??;
+            .ok_or(Status::invalid_argument("invalid field"))??;
 
         let Some(CreateFileMetadata {
             user_id,
             attach_id: Some(attach_id),
-            expected_parts,
             name: file_name,
         }) = first_part.metadata else {
-            return Err(Status::invalid_argument("First message in the stream is invalid"));
+            return Err(Status::invalid_argument("invalid field"));
         };
 
-        println!("metadata: {}, {:?}, {}, {}", user_id, attach_id, file_name, expected_parts);
+        println!("metadata: {}, {:?}, {}", user_id, attach_id, file_name);
 
         // making sure the note or the shelf that the file is going to be attached to exists
 
@@ -80,40 +80,33 @@ impl Files for AppState {
             .await
             .map_to_status()?;
 
-        // preparing some file stuff and writing the first chunk
+        // preparing file stuff
 
         let file_hash = uuid::Uuid::new_v4().to_string();
         let file_path = format!("./files/{}", file_hash);
+
         let mut file = tokio::fs::File::create_new(&file_path).await?;
+        file.set_max_buf_size(1024 * 1024 * self.chunk_size);
 
         let mut file_defer = FileDefer {
             file_path: file_path.clone(),
             delete: true,
         };
 
-        file.set_max_buf_size(1024 * 1024 * self.chunk_size);
-        let bytes_written = file.write(&first_part.data).await?;
-
-        println!("hash, path: {}, {}", file_hash, file_path);
-        println!("part 1: {} ({})", first_part.data.len(), bytes_written);
+        println!("file_path: {}", file_path);
 
         // processing the rest of the parts
 
-        let mut current_part = 1;
+        let mut i = 0;
         while let Some(file_part) = stream.next().await {
-            current_part += 1;
-
-            if current_part > expected_parts {
-                return Err(Status::invalid_argument("Amount of parts exceeded the expected amount"));
-            }
+            i += 1;
 
             let file_part = file_part?;
             let bytes_written = file.write(&file_part.data).await?;
-            println!("part {}: {} ({})", current_part, file_part.data.len(), bytes_written);
-        }
 
-        if current_part < expected_parts {
-            return Err(Status::invalid_argument("Amount of parts is smaller than the expected amount"));
+            if i < 10 || (i < 100 && i % 10 == 0) || (i < 1000 && i % 100 == 0) || i % 1000 == 0 {
+                println!("part {}: {} ({})", i, file_part.data.len(), bytes_written);
+            }
         }
 
         // saving the file data
@@ -174,16 +167,14 @@ impl Files for AppState {
         let mut file = tokio::fs::File::open(format!("./files/{}", file_info.hash)).await
             .map_err(|_| tonic::Status::internal("could not find the file"))?;
 
-        let file_size = file.metadata().await?.len();
-        // let chunk_size = (1024 * 1024 * self.chunk_size) as u64;
-        let chunk_size = 1024 * 1024 * 3 + 1024 * 512;  // unforunately, anything around and above 4mb doesn't get accepted by browsers or something
-        let expected_parts = (file_size / chunk_size) as i32 + (file_size % chunk_size > 0) as i32;
-        let last_part_len = (file_size % chunk_size) as usize;
+        let file_size = file.metadata().await?.len() as usize;
+        let chunk_size = 1024 * 1024 * self.chunk_size;
+        let chunk_size = min(chunk_size, 1024 * 1024 * 3 + 1024 * 512);  // unforunately, anything around and above 4mb doesn't get accepted by browsers or something
 
-        file.set_max_buf_size(chunk_size as usize);
-        let mut buffer = vec![0; chunk_size as usize];
+        file.set_max_buf_size(chunk_size);
+        let mut buffer = vec![0; chunk_size];
 
-        println!("size, chunk, parts: {}, {}, {}", file_size, chunk_size, expected_parts);
+        println!("size, chunk: {}, {}", file_size, chunk_size);
 
         // defining a channel that yields FileData objects with file data
 
@@ -199,7 +190,6 @@ impl Files for AppState {
                 metadata: Some(DownloadFileMetadata {
                     name: file_info.name,
                     size: file_size as i64,
-                    expected_parts: expected_parts,
                 }),
             };
 
@@ -210,23 +200,31 @@ impl Files for AppState {
 
             // and then send the actual file data by reading the file
 
-            for i in 1..=expected_parts {
-                match file.read(&mut buffer).await {
-                    Ok(len) => if len == 0 { println!("FILE READ LEN == 0"); break; },
-                    Err(e) => { println!("FILE READ ERR: {:#?}", e); break; },
-                }
+            let mut i = 0;
+            loop {
+                i += 1;
 
-                let data = match i == expected_parts {
-                    true => buffer[0..last_part_len].to_vec(),
-                    false => buffer.clone(),
+                let bytes_read = match file.read(&mut buffer).await {
+                    Ok(l) => l,
+                    Err(e) => {
+                        println!("FILE READ ERR: {:#?}", e);
+                        break;
+                    },
                 };
 
-                if i < 10 || (i < 100 && i % 10 == 0) || i % 100 == 0 || i == expected_parts {
+                if bytes_read == 0 {
+                    println!("buf len == 0");
+                    break;
+                }
+
+                let data = buffer[0..bytes_read].to_vec();
+
+                if i < 10 || (i < 100 && i % 10 == 0) || (i < 1000 && i % 100 == 0) || i % 1000 == 0 {
                     println!("buf {}: {}", i, data.len());
                 }
 
                 let data_part = FileData {
-                    data: data,
+                    data,
                     metadata: None,
                 };
 
