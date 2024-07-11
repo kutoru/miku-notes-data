@@ -1,12 +1,6 @@
-DROP TABLE IF EXISTS shelf_files;
-DROP TABLE IF EXISTS shelves;
-DROP TABLE IF EXISTS note_tags;
-DROP TABLE IF EXISTS note_files;
-DROP TABLE IF EXISTS notes;
-DROP TABLE IF EXISTS tags;
-DROP TABLE IF EXISTS files;
+-- Add up migration script here
 
-CREATE TABLE files (
+CREATE TABLE IF NOT EXISTS files (
     id SERIAL PRIMARY KEY,
     user_id INT NOT NULL,
     hash VARCHAR(50) UNIQUE NOT NULL,
@@ -16,9 +10,9 @@ CREATE TABLE files (
     FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
-CREATE INDEX files_hash ON files(hash);
+CREATE INDEX IF NOT EXISTS files_hash ON files(hash);
 
-CREATE TABLE tags (
+CREATE TABLE IF NOT EXISTS tags (
     id SERIAL PRIMARY KEY,
     user_id INT NOT NULL,
     name VARCHAR(50) NOT NULL,
@@ -26,7 +20,7 @@ CREATE TABLE tags (
     FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
-CREATE TABLE notes (
+CREATE TABLE IF NOT EXISTS notes (
     id SERIAL PRIMARY KEY,
     user_id INT NOT NULL,
     title VARCHAR(250) NOT NULL,
@@ -37,7 +31,7 @@ CREATE TABLE notes (
     FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
-CREATE TABLE note_files (
+CREATE TABLE IF NOT EXISTS note_files (
     note_id INT NOT NULL,
     file_id INT NOT NULL,
     FOREIGN KEY (note_id) REFERENCES notes(id),
@@ -45,7 +39,7 @@ CREATE TABLE note_files (
     PRIMARY KEY (note_id, file_id)
 );
 
-CREATE TABLE note_tags (
+CREATE TABLE IF NOT EXISTS note_tags (
     note_id INT NOT NULL,
     tag_id INT NOT NULL,
     FOREIGN KEY (note_id) REFERENCES notes(id),
@@ -53,7 +47,7 @@ CREATE TABLE note_tags (
     PRIMARY KEY (note_id, tag_id)
 );
 
-CREATE TABLE shelves (
+CREATE TABLE IF NOT EXISTS shelves (
     id SERIAL PRIMARY KEY,
     user_id INT UNIQUE NOT NULL,
     text VARCHAR(2500) NOT NULL,
@@ -63,7 +57,7 @@ CREATE TABLE shelves (
     FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
-CREATE TABLE shelf_files (
+CREATE TABLE IF NOT EXISTS shelf_files (
     shelf_id INT NOT NULL,
     file_id INT NOT NULL,
     FOREIGN KEY (shelf_id) REFERENCES shelves(id),

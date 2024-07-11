@@ -8,7 +8,7 @@ mod tags;
 mod notes;
 mod shelves;
 
-pub async fn start(state: &AppState, addr: &str, service_token: &str) -> anyhow::Result<()> {
+pub async fn start(state: &AppState, port: u16, service_token: &str) -> anyhow::Result<()> {
     let interceptor = RequestInterceptorLayer::new(Interceptor {
         auth_value: format!("Bearer {}", service_token),
     });
@@ -18,7 +18,8 @@ pub async fn start(state: &AppState, addr: &str, service_token: &str) -> anyhow:
     let notes_service = notes::get_service(state.clone());
     let shelves_service = shelves::get_service(state.clone());
 
-    println!("Data server listening on {}", addr);
+    let addr = format!("127.0.0.1:{port}");
+    println!("Data service listening on {addr}");
 
     Server::builder()
         .layer(interceptor)
