@@ -6,8 +6,6 @@ WORKDIR /usr/src/miku-notes-data
 COPY . .
 
 RUN cargo install sqlx-cli --no-default-features --features native-tls,postgres
-RUN sqlx migrate run
-
 RUN cargo install --path .
 
-CMD ["miku-notes-data"]
+CMD /bin/sh -c "sqlx migrate run && miku-notes-data"

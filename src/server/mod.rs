@@ -18,7 +18,7 @@ pub async fn start(state: &AppState, port: u16, service_token: &str) -> anyhow::
     let notes_service = notes::get_service(state.clone());
     let shelves_service = shelves::get_service(state.clone());
 
-    let addr = format!("127.0.0.1:{port}");
+    let addr = format!("[::]:{port}").parse()?;
     println!("Data service listening on {addr}");
 
     Server::builder()
@@ -27,7 +27,7 @@ pub async fn start(state: &AppState, port: u16, service_token: &str) -> anyhow::
         .add_service(tags_service)
         .add_service(notes_service)
         .add_service(shelves_service)
-        .serve(addr.parse()?)
+        .serve(addr)
         .await?;
 
     Ok(())

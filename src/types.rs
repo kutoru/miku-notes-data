@@ -33,7 +33,9 @@ impl RequestInterceptor for Interceptor {
         &self,
         req: tonic::codegen::http::Request<Body>
     ) -> Result<tonic::codegen::http::Request<Body>, Status> {
-        println!("Request: {} -> {}", req.method(), req.uri().path());
+        if req.uri().path() != "/" {
+            println!("Request: {} -> {}", req.method(), req.uri().path());
+        }
 
         match req.headers().get("authorization").map(|v| v.to_str()) {
             Some(Ok(h)) if h == self.auth_value => (),
