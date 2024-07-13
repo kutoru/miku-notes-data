@@ -1,28 +1,25 @@
 # ?
 
-This is one out of four parts of [Miku Notes]()
+This is one out of four parts of [Miku Notes](https://github.com/kutoru/miku-notes). This part is responsible for direct interaction with the user-generated data, such as creating notes, storing files, updating shelves, etc.
 
-Application parts:
-- [Auth service](https://github.com/kuromii5/miku-notes-auth)
-- [Data service](https://github.com/kutoru/miku-notes-data) (this repo)
-- [Gateway service](https://github.com/kutoru/miku-notes-gateway)
-- [Frontend](https://github.com/kinokorain/miku-notes-frontend)
+# How to run this service
 
-This repo is the service that directly interacts with the user-generated data
+**It is highly recommended** to run this service along with other parts simultaneously by using docker compose. The instructions for that can be found in the [main repository](https://github.com/kutoru/miku-notes).
 
-# How to run
+With having that said, you could still run the service manually by following the instructions below.
 
 First, make sure that you:
 - have cloned the submodule in the `./proto` directory
 - have the [protoc](https://grpc.io/docs/protoc-installation) binary on your path
 - have created and filled out your [.env configuration](#env)
 - have a Postgres database launched and set up according to your .env configuration
+- have already ran migrations from the **Auth service**
 
 If necessary, you can run the database migrations using [sqlx cli](https://github.com/launchbadge/sqlx/blob/main/sqlx-cli/README.md). You can install it with
 ```
 cargo install sqlx-cli --no-default-features --features native-tls,postgres
 ```
-Note that the migration command below must be executed in the project's root directory, as it is looking for a .env file with a `DATABASE_URL` value inside. The command to run migrations is
+**Note** that the migration command below must be executed in the project's root directory, as it is looking for a .env file with a `DATABASE_URL` value inside. Also **note** that this command will not work if you haven't yet ran the **Auth service**'s migrations. In any way, the command to run migrations is
 ```
 sqlx migrate run
 ```
