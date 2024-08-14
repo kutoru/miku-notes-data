@@ -54,11 +54,12 @@ impl Files for AppState {
             user_id,
             attach_id: Some(attach_id),
             name: file_name,
+            file_size,
         }) = first_part.metadata else {
             return Err(Status::invalid_argument("invalid field"));
         };
 
-        println!("metadata: {}, {:?}, {}", user_id, attach_id, file_name);
+        println!("metadata: {}, {:?}, {}, {}", user_id, attach_id, file_name, file_size);
 
         // making sure the note or the shelf that the file is going to be attached to exists
 
@@ -97,15 +98,27 @@ impl Files for AppState {
         // processing the rest of the parts
 
         let mut i = 0;
+        let mut written_total = 0;
         while let Some(file_part) = stream.next().await {
             i += 1;
 
             let file_part = file_part?;
-            let bytes_written = file.write(&file_part.data).await?;
+            let bytes_written = file.write(&file_part.data).await? as u64;
+            written_total += bytes_written;
+
+            if written_total > file_size {
+                return Err(Status::invalid_argument("got a file with an invalid size"));
+            }
 
             if i < 10 || (i < 100 && i % 10 == 0) || (i < 1000 && i % 100 == 0) || i % 1000 == 0 {
                 println!("part {}: {} ({})", i, file_part.data.len(), bytes_written);
             }
+        }
+
+        println!("sizes: {written_total}/{file_size}");
+
+        if written_total != file_size {
+            return Err(Status::invalid_argument("got a file with an invalid size"));
         }
 
         // saving the file data
