@@ -78,7 +78,7 @@ impl Tags for AppState {
 
         sqlx::query("DELETE FROM tags WHERE id = $1 AND user_id = $2;")
             .bind(req_body.id).bind(req_body.user_id)
-            .execute(&self.pool)
+            .execute(&mut *transaction)
             .await
             .map_to_status()?
             .rows_affected()
