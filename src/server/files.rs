@@ -123,14 +123,13 @@ impl Files for AppState {
 
         // saving the file data
 
-        let size = file.metadata().await?.len() as i64;
         let mut transaction = self.pool
             .begin()
             .await
             .map_to_status()?;
 
         let mut new_file_info = sqlx::query_as::<_, File>("INSERT INTO files (user_id, hash, name, size) VALUES ($1, $2, $3, $4) RETURNING *;")
-            .bind(user_id).bind(file_hash).bind(file_name).bind(size)
+            .bind(user_id).bind(file_hash).bind(file_name).bind(written_total as i64)
             .fetch_one(&mut *transaction)
             .await
             .map_to_status()?;
